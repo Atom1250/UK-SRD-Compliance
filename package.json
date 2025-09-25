@@ -1,0 +1,9 @@
+{
+  "name": "uk-srd-compliance",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "frontend",
+    "api"
+  ]
+}
