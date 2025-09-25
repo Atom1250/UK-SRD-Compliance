@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SDR Preference Pathway Assistant</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="app__header">
+        <h1>SDR Preference Pathway Assistant</h1>
+        <p>
+          This prototype demonstrates the consent → education → preference capture
+          journey described in the SDR specification. All data is stored in memory
+          for the current server session only.
+        </p>
+      </header>
+
+      <section class="status" aria-live="polite">
+        <div>
+          <h2>Current stage</h2>
+          <p id="stage">Loading…</p>
+        </div>
+        <div>
+          <h2>Session ID</h2>
+          <p id="session-id">—</p>
+        </div>
+      </section>
+
+      <section class="chat" aria-label="Chat transcript">
+        <ul id="messages" class="chat__messages"></ul>
+        <form id="composer" class="composer" autocomplete="off">
+          <label class="composer__label" for="message-input">
+            Respond to continue the onboarding conversation
+          </label>
+          <textarea
+            id="message-input"
+            name="message"
+            required
+            placeholder="Type your response"
+            rows="3"
+          ></textarea>
+          <button type="submit" id="send-button">Send</button>
+          <p id="error" role="alert" class="composer__error" hidden></p>
+        </form>
+      </section>
+
+      <section class="summary" aria-live="polite">
+        <h2>Captured data (draft)</h2>
+        <pre id="session-data">{}</pre>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
