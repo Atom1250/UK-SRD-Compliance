@@ -6,6 +6,10 @@ const composer = document.getElementById("composer");
 const messageInput = document.getElementById("message-input");
 const errorBanner = document.getElementById("error");
 const sendButton = document.getElementById("send-button");
+const reportSection = document.getElementById("report-section");
+const reportPreview = document.getElementById("report-preview");
+const reportDownload = document.getElementById("report-download");
+
 
 const addMessage = (author, text) => {
   const item = document.createElement("li");
@@ -31,9 +35,25 @@ const setSessionId = (sessionId) => {
   sessionIdLabel.textContent = sessionId ?? "—";
 };
 
+const updateReport = (session) => {
+  const report = session?.data?.report;
+  if (report?.preview) {
+    reportPreview.textContent = report.preview;
+    const downloadUrl = report.doc_url ?? `/api/sessions/${session.id}/report.pdf`;
+    reportDownload.href = downloadUrl;
+    reportSection.hidden = false;
+  } else {
+    reportPreview.textContent = "";
+    reportDownload.removeAttribute("href");
+    reportSection.hidden = true;
+  }
+};
+
 const setSessionData = (session) => {
   if (!session) return;
   sessionDataBlock.textContent = JSON.stringify(session.data, null, 2);
+  setStage(session.stage);
+  updateReport(session);
 };
 
 const showError = (message) => {
@@ -65,7 +85,6 @@ const bootstrap = async () => {
     const data = await api("/sessions", { method: "POST" });
     currentSessionId = data.session.id;
     setSessionId(currentSessionId);
-    setStage(data.session.stage);
     setSessionData(data.session);
     data.messages.forEach((message) => addMessage("assistant", message));
   } catch (error) {
@@ -104,14 +123,8 @@ composer.addEventListener("submit", async (event) => {
     });
 
     setSessionData(eventResponse.session);
+    (eventResponse.messages ?? []).forEach((message) =>
 
-    const advanceResponse = await api(`/sessions/${currentSessionId}/advance`, {
-      method: "POST"
-    });
-
-    setStage(advanceResponse.session.stage);
-    setSessionData(advanceResponse.session);
-    advanceResponse.messages.forEach((message) =>
       addMessage("assistant", message)
     );
   } catch (error) {

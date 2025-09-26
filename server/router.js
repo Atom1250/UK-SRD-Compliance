@@ -5,7 +5,6 @@ import {
   getSession,
   listSessions,
   saveSession,
-  advanceStage,
   appendEvent,
   applyDataPatch,
   toPublicSession
@@ -22,6 +21,9 @@ import {
   sendOptions,
   serveStaticFile
 } from "./httpUtils.js";
+import { handleEvent } from "./state/conversationEngine.js";
+import { getReportArtifact } from "./report/reportStore.js";
+
 
 const API_PREFIX = "/api";
 
@@ -117,23 +119,13 @@ const handleAppendEvent = async (req, res, id) => {
   if (stageData) {
     applyDataPatch(session, stageData);
   }
+  const result = handleEvent(session, event);
   saveSession(session);
 
   sendJSON(res, 201, {
     event,
-    session: toPublicSession(session)
-  });
-};
-
-const handleAdvance = (res, id) => {
-  const session = ensureSession(res, id);
-  if (!session) return;
-  const result = advanceStage(session);
-  saveSession(result.session);
-  sendJSON(res, 200, {
-    session: toPublicSession(result.session),
-    messages: result.messages,
-    completed: result.completed
+    session: toPublicSession(session),
+    messages: result.messages
   });
 };
 
@@ -302,13 +294,24 @@ export const handleRequest = async (req, res) => {
         return;
       }
 
-      if (req.method === "POST" && tail === "advance") {
-        handleAdvance(res, sessionId);
+      if ((req.method === "POST" || req.method === "GET") && tail === "validate") {
+        handleValidate(res, sessionId);
         return;
       }
 
-      if (req.method === "POST" && tail === "validate") {
-        handleValidate(res, sessionId);
+      if (req.method === "GET" && tail === "report.pdf") {
+        const pdf = getReportArtifact(sessionId);
+        if (!pdf) {
+          sendJSON(res, 404, { error: "Report not generated yet" });
+          return;
+        }
+
+        res.writeHead(200, {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="preference-pathway-${sessionId}.pdf"`,
+          "Content-Length": pdf.length
+        });
+        res.end(pdf);
         return;
       }
     }

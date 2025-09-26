@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { CONVERSATION_STAGES, STAGE_PROMPTS } from "./constants.js";
+import { CONVERSATION_STAGES } from "./constants.js";
+
 
 const sessions = new Map();
 
@@ -31,7 +32,9 @@ const createEmptySessionData = () => ({
     version: "v1.0",
     doc_url: null,
     signed_url: null,
-    status: "draft"
+    status: "draft",
+    preview: null
+
   }
 });
 
@@ -45,7 +48,17 @@ export const createSession = ({ ip } = {}) => {
     createdAt: timestamp,
     updatedAt: timestamp,
     data: createEmptySessionData(),
-    events: []
+    events: [],
+    context: {
+      profileStep: 0,
+      educationAcknowledged: false,
+      preference: {
+        allocationsCaptured: false,
+        needImpactThemes: false,
+        needEthicalDetail: false,
+        stewardshipAnswered: false
+      }
+    }
   };
 
   if (ip) {
@@ -71,21 +84,14 @@ export const saveSession = (session) => {
   return session;
 };
 
-export const advanceStage = (session) => {
-  const currentIndex = CONVERSATION_STAGES.indexOf(session.stage);
-  const isLastStage = currentIndex >= CONVERSATION_STAGES.length - 1;
-
-  if (!isLastStage) {
-    session.stage = CONVERSATION_STAGES[currentIndex + 1];
+export const setStage = (session, stage) => {
+  if (!CONVERSATION_STAGES.includes(stage)) {
+    return session;
   }
 
+  session.stage = stage;
   touchSession(session);
-
-  return {
-    session,
-    messages: [STAGE_PROMPTS[session.stage]],
-    completed: isLastStage
-  };
+  return session;
 };
 
 const deepMerge = (target, patch) => {

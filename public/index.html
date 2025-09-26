@@ -50,6 +50,18 @@
         <h2>Captured data (draft)</h2>
         <pre id="session-data">{}</pre>
       </section>
+
+      <section class="report" id="report-section" hidden aria-live="polite">
+        <h2>Report preview</h2>
+        <p>
+          The assistant generates a summary report once you approve the draft.
+          Review the on-screen copy and download the PDF for your records.
+        </p>
+        <pre id="report-preview"></pre>
+        <a id="report-download" href="#" download="preference-pathway.pdf">
+          Download PDF report
+        </a>
+      </section>
     </main>
 
     <script type="module" src="./app.js"></script>
