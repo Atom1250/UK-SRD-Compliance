@@ -24,7 +24,6 @@ import {
 import { handleEvent } from "./state/conversationEngine.js";
 import { getReportArtifact } from "./report/reportStore.js";
 
-
 const API_PREFIX = "/api";
 
 const readBody = async (req) => {

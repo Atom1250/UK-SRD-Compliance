@@ -39,6 +39,69 @@ export const PATHWAY_NAMES = [
   "Philanthropy"
 ];
 
+export const PATHWAY_ALIASES = {
+  "Conventional": [
+    "conventional",
+    "traditional",
+    "core"
+  ],
+  "Conventional incl. ESG": [
+    "conventional esg",
+    "conventional including esg",
+    "conventional with esg",
+    "esg"
+  ],
+  "Sustainability: Improvers": [
+    "improvers",
+    "sustainability improvers",
+    "transition"
+  ],
+  "Sustainability: Focus": [
+    "focus",
+    "sustainability focus",
+    "thematic"
+  ],
+  "Sustainability: Impact": [
+    "impact",
+    "sustainability impact",
+    "impact investing"
+  ],
+  "Sustainability: Mixed Goals": [
+    "mixed goals",
+    "mixed",
+    "balanced sustainability"
+  ],
+  "Ethical": [
+    "ethical",
+    "values",
+    "screened"
+  ],
+  "Philanthropy": [
+    "philanthropy",
+    "giving",
+    "charitable"
+  ]
+};
+
+export const PATHWAY_DETAILS = {
+  "Conventional":
+    "Conventional: diversified mainstream investments aiming for long-term growth without specific sustainability screens.",
+  "Conventional incl. ESG":
+    "Conventional incl. ESG: traditional portfolios that also integrate environmental, social, and governance (ESG) considerations in research and stewardship.",
+  "Sustainability: Improvers":
+    "Sustainability – Improvers: targets companies on a journey to improve their sustainability practices with active engagement to accelerate progress.",
+  "Sustainability: Focus":
+    "Sustainability – Focus: concentrates on sustainability themes such as clean energy or water stewardship while staying diversified across assets aligned to those themes.",
+  "Sustainability: Impact":
+    "Sustainability – Impact: invests in solutions delivering measurable positive outcomes alongside financial returns, often linked to UN SDGs.",
+  "Sustainability: Mixed Goals":
+    "Sustainability – Mixed Goals: blends Improvers, Focus, and Impact styles to balance thematic ambition with diversification.",
+  "Ethical":
+    "Ethical: applies positive and negative screens to reflect faith- or values-based preferences, excluding activities you identify.",
+  "Philanthropy":
+    "Philanthropy: channels capital into charitable or grant-making vehicles where financial return may be secondary to mission delivery."
+};
+
 export const ATR_VALUES = ["Cautious", "Balanced", "Adventurous"];
 export const CFL_VALUES = ["Low", "Medium", "High"];
 export const STEWARDSHIP_OPTIONS = ["fund_manager", "client_questionnaire"];

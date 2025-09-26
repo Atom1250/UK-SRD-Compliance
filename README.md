@@ -41,7 +41,6 @@ curl -s http://localhost:4000/api/sessions/SESSION_ID/validate | jq '.validation
 `/validate` now accepts either `GET` or `POST`, so the last command works
 verbatim with the ID returned from the session creation response.
 
-
 No package installation is required – the server uses only built-in Node
 modules and serves a static HTML/JS interface from `public/`.
 
@@ -52,7 +51,6 @@ modules and serves a static HTML/JS interface from `public/`.
 - `public/` provides an accessible chat UI that exercises the API. The summary
   panel shows the evolving session payload and the report section surfaces the
   rendered preview + PDF download when available.
-
 
 ### API surface
 
@@ -75,7 +73,6 @@ All endpoints live under `/api`:
 
 The server keeps everything in-memory so restarting the process clears the data
 (including generated PDFs).
-
 
 ### Validation rules implemented
 

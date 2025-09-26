@@ -1,6 +1,9 @@
 import {
   ATR_VALUES,
   CFL_VALUES,
+  PATHWAY_ALIASES,
+  PATHWAY_DETAILS,
+
   PATHWAY_NAMES,
   STEWARDSHIP_OPTIONS,
   STAGE_PROMPTS
@@ -16,19 +19,53 @@ import { storeReportArtifacts } from "../report/reportStore.js";
 
 const yesPatterns = /\b(yes|yep|i (consent|agree|understand)|sure|ok(ay)?)\b/i;
 
-const normalise = (value) => value.trim().toLowerCase();
+const normalise = (value = "") =>
+  value
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
-const PATHWAY_MATCH_ORDER = [...PATHWAY_NAMES].sort(
-  (a, b) => b.length - a.length
-);
+const PATHWAY_ALIAS_INDEX = PATHWAY_NAMES.flatMap((name) => {
+  const aliases = [name, ...(PATHWAY_ALIASES[name] ?? [])];
+  return aliases
+    .map((alias) => normalise(alias))
+    .filter(Boolean)
+    .map((alias) => ({ alias, name }));
+}).sort((a, b) => b.alias.length - a.alias.length);
 
 const findPathwayByAlias = (fragment) => {
-  const normalised = normalise(fragment);
-  return (
-    PATHWAY_MATCH_ORDER.find((name) =>
-      normalised.includes(normalise(name))
-    ) ?? null
+  const normalisedFragment = normalise(fragment);
+  if (!normalisedFragment) {
+    return null;
+  }
+
+  const padded = ` ${normalisedFragment} `;
+  const match = PATHWAY_ALIAS_INDEX.find(({ alias }) =>
+    padded.includes(` ${alias} `)
   );
+
+  return match?.name ?? null;
+};
+
+const findPathwaysInText = (text) => {
+  const normalisedText = normalise(text);
+  if (!normalisedText) {
+    return [];
+  }
+
+  const padded = ` ${normalisedText} `;
+  const results = [];
+
+  for (const entry of PATHWAY_ALIAS_INDEX) {
+    if (padded.includes(` ${entry.alias} `) && !results.includes(entry.name)) {
+      results.push(entry.name);
+    }
+  }
+
+  return results;
 };
 
 const splitList = (text) =>
@@ -237,6 +274,8 @@ const handleProfile = (session, text) => {
 
     return moveToStage(session, "S2_EDUCATION", [
       "Great. Here's a quick overview of each pathway: Conventional, Conventional incl. ESG, Improvers, Focus, Impact, Mixed Goals, Ethical, and Philanthropy. None is ranked above the others—they simply suit different objectives.",
+      "If you'd like more detail about any pathway, just mention its name (for example, 'Tell me about Focus') and I'll expand.",
+
       "Please confirm once you've read this summary so we can record your informed choice acknowledgment."
     ]);
   }
@@ -245,6 +284,24 @@ const handleProfile = (session, text) => {
 };
 
 const handleEducation = (session, text) => {
+  const requestedPathways = findPathwaysInText(text);
+  const wantsMoreDetail = /\b(more|tell|learn|detail|explain|about)\b/i.test(text);
+
+  if (
+    requestedPathways.length > 0 &&
+    (!yesPatterns.test(text) || wantsMoreDetail)
+  ) {
+    const details = requestedPathways
+      .map((name) => PATHWAY_DETAILS[name])
+      .filter(Boolean);
+    return {
+      messages: [
+        ...details,
+        "Let me know when you're comfortable to proceed by replying with 'I understand'."
+      ]
+    };
+  }
+
   if (!yesPatterns.test(text)) {
     return {
       messages: [
