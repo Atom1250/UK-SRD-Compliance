@@ -124,7 +124,6 @@ composer.addEventListener("submit", async (event) => {
 
     setSessionData(eventResponse.session);
     (eventResponse.messages ?? []).forEach((message) =>
-
       addMessage("assistant", message)
     );
   } catch (error) {

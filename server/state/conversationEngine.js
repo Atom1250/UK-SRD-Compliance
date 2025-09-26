@@ -22,6 +22,7 @@ const noPatterns = /\b(no|nope|not (yet|now)|decline|refuse)\b/i;
 
 const normalise = (value) => value.trim().toLowerCase();
 
+
 const splitList = (text) =>
   text
     .split(/[,\n]|\band\b/gi)
@@ -347,6 +348,7 @@ const handleOnboarding = (session, text) => {
     return moveToStage(session, "SEGMENT_C_CONSENT", [
       "Thank you. We need your permission to record your answers for regulatory reporting.",
       "Do you consent to us processing your data for this advice session?"
+
     ]);
   }
 

@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { CONVERSATION_STAGES } from "./constants.js";
 
-
 const sessions = new Map();
 
 const createEmptySessionData = (sessionId) => ({
@@ -91,6 +90,7 @@ const createEmptySessionData = (sessionId) => ({
     educ_pack_sent: false,
     guardrail_triggers: [],
     report_hash: null
+
   }
 });
 
