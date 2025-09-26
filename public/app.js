@@ -44,8 +44,19 @@ const addMessage = (author, text) => {
 
   item.appendChild(label);
   item.appendChild(body);
-  messagesList.appendChild(item);
-  item.scrollIntoView({ behavior: "smooth", block: "end" });
+
+  if (messagesList.firstChild) {
+    messagesList.insertBefore(item, messagesList.firstChild);
+  } else {
+    messagesList.appendChild(item);
+  }
+
+  if (typeof messagesList.scrollTo === "function") {
+    messagesList.scrollTo({ top: 0, behavior: "smooth" });
+  } else {
+    messagesList.scrollTop = 0;
+  }
+  item.scrollIntoView({ behavior: "smooth", block: "nearest" });
 };
 
 const setStage = (stage) => {
@@ -119,6 +130,173 @@ const parseExclusionsInput = (value) =>
       const threshold = thresholdPart ? parseNumberField(thresholdPart) : null;
       return { sector, threshold };
     });
+
+const formatText = (value, fallback = "—") => {
+  if (value === null || value === undefined) return fallback;
+  const text = String(value).trim();
+  return text ? text : fallback;
+};
+
+const formatNumber = (value, { suffix = "", fallback = "—" } = {}) => {
+  if (value === null || value === undefined) return fallback;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `${numeric}${suffix}` : fallback;
+};
+
+const formatListDisplay = (value, fallback = "—") => {
+  if (!Array.isArray(value) || value.length === 0) {
+    return fallback;
+  }
+  return value.join(", ");
+};
+
+const formatBooleanDisplay = (value, fallback = "—") => {
+  if (value === true) return "Yes";
+  if (value === false) return "No";
+  return fallback;
+};
+
+const formatExclusionDisplay = (exclusions = []) => {
+  if (!Array.isArray(exclusions) || exclusions.length === 0) {
+    return "None";
+  }
+
+  return exclusions
+    .map((item) => {
+      if (!item) return "";
+      const sector = formatText(item.sector ?? "", "");
+      if (!sector) return "";
+      if (item.threshold === null || item.threshold === undefined) {
+        return sector;
+      }
+      return `${sector} (<${item.threshold}%)`;
+    })
+    .filter(Boolean)
+    .join(", ");
+};
+
+const createSummarySection = (title, rows) => {
+  const section = document.createElement("div");
+  section.className = "confirmation-summary__section";
+
+  const heading = document.createElement("p");
+  heading.className = "confirmation-summary__title";
+  heading.textContent = title;
+  section.appendChild(heading);
+
+  rows
+    .filter((row) => row && row.label)
+    .forEach((row) => {
+      const item = document.createElement("p");
+      item.className = "confirmation-summary__item";
+      item.textContent = `${row.label}: ${formatText(row.value)}`;
+      section.appendChild(item);
+    });
+
+  return section;
+};
+
+const buildConfirmationSummary = (session) => {
+  const container = document.createElement("div");
+  container.className = "confirmation-summary";
+
+  const profile = session.data?.client_profile ?? {};
+  const knowledge = profile.knowledge_experience ?? {};
+  const knowledgeParts = [
+    formatText(knowledge.summary, ""),
+    formatListDisplay(knowledge.instruments, ""),
+    formatText(knowledge.frequency, ""),
+    formatText(knowledge.duration, "")
+  ].filter(Boolean);
+
+  const horizonDisplay = formatNumber(profile.horizon_years);
+  const riskDisplay = formatNumber(profile.risk_tolerance);
+
+  const consent = session.data?.consent ?? {};
+  const futureContact = consent.future_contact ?? {};
+
+  const prefs = session.data?.sustainability_preferences ?? {};
+
+  const adviceOutcome = session.data?.advice_outcome ?? {};
+
+  container.append(
+    createSummarySection("Client profile", [
+      { label: "Client type", value: profile.client_type },
+      { label: "Objective", value: profile.objectives },
+      {
+        label: "Time horizon",
+        value: horizonDisplay === "—" ? "—" : `${horizonDisplay} years`
+      },
+      {
+        label: "Risk tolerance",
+        value: riskDisplay === "—" ? "—" : `${riskDisplay} / 7`
+      },
+      { label: "Capacity for loss", value: profile.capacity_for_loss },
+      { label: "Liquidity needs", value: profile.liquidity_needs },
+      {
+        label: "Knowledge & experience",
+        value: knowledgeParts.length > 0 ? knowledgeParts.join(" • ") : "—"
+      }
+    ]),
+    createSummarySection("Consent & audit", [
+      {
+        label: "Data processing",
+        value: formatBooleanDisplay(consent.data_processing?.granted)
+      },
+      {
+        label: "E-delivery",
+        value: formatBooleanDisplay(consent.e_delivery?.granted)
+      },
+      {
+        label: "Future contact",
+        value: formatBooleanDisplay(futureContact.granted)
+      },
+      {
+        label: "Purpose",
+        value:
+          futureContact.granted === true
+            ? futureContact.purpose || "—"
+            : "Not applicable"
+      }
+    ]),
+    createSummarySection("Sustainability preferences", [
+      { label: "Preference level", value: prefs.preference_level },
+      {
+        label: "Labels of interest",
+        value: formatListDisplay(prefs.labels_interest, "None")
+      },
+      { label: "Themes", value: formatListDisplay(prefs.themes, "None") },
+      {
+        label: "Exclusions",
+        value: formatExclusionDisplay(prefs.exclusions)
+      },
+      {
+        label: "Impact goals",
+        value: formatListDisplay(prefs.impact_goals, "None")
+      },
+      {
+        label: "Engagement importance",
+        value: prefs.engagement_importance || "—"
+      },
+      {
+        label: "Reporting preference",
+        value: prefs.reporting_frequency_pref || "—"
+      },
+      {
+        label: "Trade-off tolerance",
+        value: prefs.tradeoff_tolerance || "—"
+      }
+    ]),
+    createSummarySection("Advice outcome", [
+      { label: "Recommendation", value: adviceOutcome.recommendation || "—" },
+      { label: "Rationale", value: adviceOutcome.rationale || "—" },
+      { label: "Sustainability fit", value: adviceOutcome.sust_fit || "—" },
+      { label: "Costs & charges", value: adviceOutcome.costs_summary || "—" }
+    ])
+  );
+
+  return container;
+};
 
 const submitStructuredEvent = async (content, stageData) => {
   if (!currentSessionId) {
@@ -619,22 +797,40 @@ const buildOptionsForm = (session) => {
   return form;
 };
 
-const buildConfirmationForm = () => {
+const buildConfirmationForm = (session) => {
   const form = document.createElement("form");
-  form.innerHTML = `
-    <p class="structured__hint">
-      Review the captured data in the panel. Confirming will trigger report preparation.
-    </p>
-    <label>
-      <input type="checkbox" name="confirmed" required />
-      I confirm the captured summary is accurate.
-    </label>
-    <label>
-      Notes for the adviser (optional)
-      <textarea name="edits_requested" placeholder="Add any clarification or edits"></textarea>
-    </label>
-    <button type="submit">Confirm and prepare report</button>
-  `;
+
+  const hint = document.createElement("p");
+  hint.className = "structured__hint";
+  hint.textContent =
+    "Review the captured data below. Confirming will prepare your personalised report.";
+
+  const summary = buildConfirmationSummary(session);
+
+  const checkboxLabel = document.createElement("label");
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.name = "confirmed";
+  checkbox.required = true;
+  checkboxLabel.appendChild(checkbox);
+  checkboxLabel.appendChild(
+    document.createTextNode(" I confirm the captured summary is accurate.")
+  );
+
+  const notesLabel = document.createElement("label");
+  notesLabel.textContent = "Notes for the adviser (optional)";
+  const notesField = document.createElement("textarea");
+  notesField.name = "edits_requested";
+  notesField.placeholder = "Add any clarification or edits";
+  notesField.rows = 3;
+  notesField.value = session.data?.summary_confirmation?.edits_requested ?? "";
+  notesLabel.appendChild(notesField);
+
+  const submitButton = document.createElement("button");
+  submitButton.type = "submit";
+  submitButton.textContent = "Confirm and prepare report";
+
+  form.append(hint, summary, checkboxLabel, notesLabel, submitButton);
 
   const confirmed = form.elements.confirmed;
   const editsRequested = form.elements.edits_requested;

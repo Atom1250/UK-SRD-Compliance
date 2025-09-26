@@ -1074,7 +1074,6 @@ const buildSummary = (session) => {
       `• Reporting frequency preference: ${prefs.reporting_frequency_pref}`
     );
     lines.push(
-
       `• Trade-off tolerance: ${prefs.tradeoff_tolerance || "Not specified"}`
     );
   }

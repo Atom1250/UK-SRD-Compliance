@@ -18,14 +18,14 @@
       </header>
 
       <section class="status" aria-live="polite">
-        <div>
-          <h2>Current stage</h2>
-          <p id="stage">Loading…</p>
-        </div>
-        <div>
-          <h2>Session ID</h2>
-          <p id="session-id">—</p>
-        </div>
+        <span class="status__item">
+          <span class="status__label">Stage</span>
+          <span id="stage" class="status__value">Loading…</span>
+        </span>
+        <span class="status__item">
+          <span class="status__label">Session</span>
+          <span id="session-id" class="status__value">—</span>
+        </span>
       </section>
 
       <section class="chat" aria-label="Chat transcript">

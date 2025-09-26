@@ -7,7 +7,6 @@ import {
   clearSessions
 } from "../db/sqlite.js";
 
-
 const createEmptySessionData = (sessionId) => ({
   session_id: sessionId,
   client_profile: {
