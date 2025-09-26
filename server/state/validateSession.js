@@ -1,135 +1,141 @@
 import {
-  ATR_VALUES,
-  CFL_VALUES,
+  CAPACITY_FOR_LOSS_VALUES,
+  CLIENT_TYPES,
   PATHWAY_NAMES,
-  STEWARDSHIP_OPTIONS
+  PREFERENCE_LEVELS,
+  REPORTING_FREQUENCY_OPTIONS,
+  RISK_SCALE
 } from "./constants.js";
 
-const uuidPattern =
-  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
-
 const isNonEmptyString = (value) => typeof value === "string" && value.trim().length > 0;
+const normalise = (value) => (typeof value === "string" ? value.trim().toLowerCase() : "");
 
-const isEmail = (value) =>
-  typeof value === "string" && /.+@.+\..+/.test(value.trim());
+const isBoolean = (value) => typeof value === "boolean";
 
-const normaliseNumber = (value) => {
-  if (typeof value === "number") return value;
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : NaN;
-  }
-  return NaN;
+const impactChosen = (labels) =>
+  Array.isArray(labels) && labels.some((label) => /impact/i.test(label));
+
+const validateExclusions = (exclusions = []) => {
+  const issues = [];
+  exclusions.forEach((item, index) => {
+    if (!item || typeof item !== "object") {
+      issues.push(`Exclusion at position ${index + 1} must be an object.`);
+      return;
+    }
+    if (!isNonEmptyString(item.sector)) {
+      issues.push(`Exclusion ${index + 1} requires a sector description.`);
+    }
+    if (item.threshold != null && !Number.isFinite(Number(item.threshold))) {
+      issues.push(`Exclusion for ${item.sector || `item ${index + 1}`} must use a numeric threshold when provided.`);
+    }
+    if (/fossil/i.test(item.sector ?? "") && (item.threshold == null || Number.isNaN(Number(item.threshold)))) {
+      issues.push("Fossil fuel exclusions require a numeric threshold (e.g. under 5%).");
+    }
+  });
+  return issues;
 };
 
 export const validateSessionData = (session) => {
   const issues = [];
   const data = session?.data ?? {};
 
-  // Consent acknowledgement
-  if (!data.acknowledgements || data.acknowledgements.read_informed_choice !== true) {
-    issues.push("Client must confirm that they read and understood the explainer content.");
+  if (!data.audit?.explanation_shown) {
+    issues.push("Client must be shown the introductory explanation before continuing.");
   }
 
-  if (
-    data.acknowledgements &&
-    !isNonEmptyString(data.acknowledgements.timestamp)
-  ) {
-    issues.push("Consent acknowledgement requires an ISO timestamp.");
+  const profile = data.client_profile ?? {};
+  if (!CLIENT_TYPES.some((type) => normalise(type) === normalise(profile.client_type))) {
+    issues.push("Client type must be individual, joint, trust, or company.");
+  }
+  if (!isNonEmptyString(profile.objectives)) {
+    issues.push("Investment objectives are required.");
+  }
+  if (!Number.isInteger(profile.horizon_years) || profile.horizon_years <= 0) {
+    issues.push("Investment horizon must be a positive whole number of years.");
+  }
+  if (!RISK_SCALE.includes(profile.risk_tolerance)) {
+    issues.push("Risk tolerance must be set on the 1–7 scale.");
+  }
+  if (!CAPACITY_FOR_LOSS_VALUES.some((value) => normalise(value) === normalise(profile.capacity_for_loss))) {
+    issues.push("Capacity for loss must be recorded as low, medium, or high.");
+  }
+  if (!isNonEmptyString(profile.liquidity_needs)) {
+    issues.push("Liquidity needs must be captured, even if the client has none.");
+  }
+  if (!isNonEmptyString(profile.knowledge_experience?.summary)) {
+    issues.push("Knowledge and experience summary is required.");
+  }
+  if (profile.financial_situation?.provided && !isNonEmptyString(profile.financial_situation?.notes)) {
+    issues.push("Financial situation notes must be recorded when the client opts to share details.");
   }
 
-  // Client profile
-  if (!data.client) {
-    issues.push("Client profile (name, contact, risk) is missing.");
-  } else {
-    if (!uuidPattern.test(data.client.id ?? "")) {
-      issues.push("Client ID must be a UUID.");
-    }
-    if (!isNonEmptyString(data.client.name)) {
-      issues.push("Client name is required.");
-    }
-    if (!data.client.contact || !isEmail(data.client.contact.email)) {
-      issues.push("Client email address is required.");
-    }
-    if (
-      !data.client.risk ||
-      !ATR_VALUES.includes(data.client.risk.atr) ||
-      !CFL_VALUES.includes(data.client.risk.cfl)
-    ) {
-      issues.push("Client risk profile must include ATR and CfL selections.");
-    }
-    const horizonYears = normaliseNumber(data.client.risk?.horizon_years);
-    if (!Number.isInteger(horizonYears) || horizonYears < 1) {
-      issues.push("Investment horizon must be a positive integer.");
-    }
+  const consent = data.consent ?? {};
+  if (!consent.data_processing?.granted) {
+    issues.push("Data processing consent (with timestamp) is required to proceed.");
+  }
+  if (consent.data_processing?.granted && !isNonEmptyString(consent.data_processing?.timestamp)) {
+    issues.push("Consent timestamp is required for audit.");
+  }
+  if (consent.e_delivery && !isBoolean(consent.e_delivery.granted)) {
+    issues.push("E-delivery preference must be recorded as granted or declined.");
+  }
+  if (consent.future_contact && consent.future_contact.granted && !isNonEmptyString(consent.future_contact.purpose)) {
+    issues.push("Future contact consent requires a stated purpose.");
   }
 
-  // Preferences and allocations
-  const preferences = data.preferences ?? {};
-  const pathways = Array.isArray(preferences.pathways)
-    ? preferences.pathways
-    : [];
-
-  if (pathways.length === 0) {
-    issues.push("Select at least one Preference Pathway and allocation.");
+  const prefs = data.sustainability_preferences ?? {};
+  if (!PREFERENCE_LEVELS.includes(prefs.preference_level ?? "none")) {
+    issues.push("Preference level must be one of none, high_level, or detailed.");
   }
-
-  const allocationTotal = pathways.reduce((sum, pathway) => {
-    const allocation = normaliseNumber(pathway.allocation_pct);
-    return sum + (Number.isFinite(allocation) ? allocation : 0);
-  }, 0);
-
-  if (Math.round(allocationTotal) !== 100) {
-    issues.push("Pathway allocations must add up to 100%.");
-  }
-
-  const sdgSensitivePathways = new Set([
-    "Sustainability: Focus",
-    "Sustainability: Impact",
-    "Sustainability: Mixed Goals"
-  ]);
-
-  pathways.forEach((pathway, index) => {
-    if (!PATHWAY_NAMES.includes(pathway.name)) {
-      issues.push(`Pathway at position ${index + 1} has an invalid name.`);
-    }
-    const allocation = normaliseNumber(pathway.allocation_pct);
-    if (!Number.isFinite(allocation) || allocation < 0 || allocation > 100) {
-      issues.push(`Allocation for ${pathway.name ?? "pathway"} must be between 0 and 100.`);
-    }
-
-    if (sdgSensitivePathways.has(pathway.name) && pathway.uses_sdgs) {
-      const hasThemes = Array.isArray(pathway.themes) && pathway.themes.length > 0;
-      const hasImpactGoals =
-        Array.isArray(pathway.impact_goals) && pathway.impact_goals.length > 0;
-      if (!hasThemes && !hasImpactGoals) {
-        issues.push(`Provide SDG themes or impact goals for ${pathway.name}.`);
-      }
-    }
-  });
-
-  if (preferences.ethical?.enabled) {
-    const exclusions = Array.isArray(preferences.ethical.exclusions)
-      ? preferences.ethical.exclusions.filter(isNonEmptyString)
-      : [];
-    if (exclusions.length === 0) {
-      issues.push("Ethical screens must include at least one exclusion when enabled.");
+  if (prefs.preference_level !== "none") {
+    if (!Array.isArray(prefs.labels_interest) || prefs.labels_interest.length === 0) {
+      issues.push("At least one SDR label interest must be recorded when preferences are provided.");
+    } else {
+      prefs.labels_interest.forEach((label, index) => {
+        if (!PATHWAY_NAMES.some((name) => normalise(name) === normalise(label))) {
+          issues.push(`Label interest at position ${index + 1} is not recognised as an FCA SDR option.`);
+        }
+      });
     }
   }
 
-  if (
-    preferences.stewardship &&
-    !STEWARDSHIP_OPTIONS.includes(preferences.stewardship.discretion)
-  ) {
-    issues.push("Stewardship discretion must be set to fund_manager or client_questionnaire.");
+  if (prefs.preference_level === "detailed") {
+    if (!Array.isArray(prefs.themes)) {
+      issues.push("Detailed preferences should include thematic interests (use an empty list if none).");
+    }
+    if (!isNonEmptyString(prefs.engagement_importance)) {
+      issues.push("Engagement importance must be captured for detailed preferences.");
+    }
+    if (!isNonEmptyString(prefs.tradeoff_tolerance)) {
+      issues.push("Please record the client’s trade-off tolerance for sustainability versus performance.");
+    }
   }
 
-  if (data.fees?.bespoke && !isNonEmptyString(data.fees.explanation)) {
-    issues.push("Provide a fee explanation whenever bespoke fees are flagged.");
+  if (prefs.exclusions) {
+    issues.push(...validateExclusions(prefs.exclusions));
   }
 
-  if (!data.report || !isNonEmptyString(data.report.version)) {
-    issues.push("Report metadata must specify a version before generation.");
+  if (!REPORTING_FREQUENCY_OPTIONS.includes(prefs.reporting_frequency_pref ?? "none")) {
+    issues.push("Reporting frequency preference must be none, quarterly, semiannual, or annual.");
+  }
+
+  if (impactChosen(prefs.labels_interest) && (!prefs.impact_goals || prefs.impact_goals.length === 0)) {
+    issues.push("Impact-labelled selections require at least one impact goal.");
+  }
+  if (impactChosen(prefs.labels_interest) && prefs.reporting_frequency_pref === "none") {
+    issues.push("Impact-labelled selections require a reporting cadence for outcome evidence.");
+  }
+
+  if (prefs.preference_level !== "none" && data.disclosures?.agr_disclaimer_presented !== true) {
+    issues.push("Anti-Greenwashing disclaimer must be presented when sustainability preferences are captured.");
+  }
+
+  if (!data.summary_confirmation?.client_summary_confirmed) {
+    issues.push("Client must confirm the captured summary before report generation.");
+  }
+
+  if (data.prod_governance && data.prod_governance.manufacturer_info_complete === false) {
+    issues.push("Manufacturer target market information must be complete before proceeding (PROD 3).");
   }
 
   return {

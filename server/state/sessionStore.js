@@ -4,29 +4,78 @@ import { CONVERSATION_STAGES } from "./constants.js";
 
 const sessions = new Map();
 
-const createEmptySessionData = () => ({
-  client: null,
-  acknowledgements: null,
-  preferences: {
-    pathways: [],
-    ethical: {
-      enabled: false,
-      exclusions: []
+const createEmptySessionData = (sessionId) => ({
+  session_id: sessionId,
+  client_profile: {
+    client_type: "",
+    objectives: "",
+    horizon_years: null,
+    risk_tolerance: null,
+    capacity_for_loss: "",
+    liquidity_needs: "",
+    knowledge_experience: {
+      summary: "",
+      instruments: [],
+      frequency: "",
+      duration: ""
     },
-    stewardship: {
-      discretion: "fund_manager"
+    financial_situation: {
+      provided: false,
+      income: null,
+      assets: null,
+      liabilities: null,
+      notes: ""
     }
   },
-  questionnaire_used: false,
-  products: [],
-  adviser_notes: "",
-  fees: {
-    bespoke: false,
-    explanation: ""
+  sustainability_preferences: {
+    preference_level: "none",
+    labels_interest: [],
+    themes: [],
+    exclusions: [],
+    impact_goals: [],
+    engagement_importance: "",
+    reporting_frequency_pref: "none",
+    tradeoff_tolerance: "",
+    educ_pack_sent: false
   },
-  audit: {
-    events: [],
-    ip: null
+  consent: {
+    data_processing: null,
+    e_delivery: null,
+    future_contact: {
+      granted: null,
+      purpose: ""
+    }
+  },
+  summary_confirmation: {
+    client_summary_confirmed: false,
+    confirmed_at: null,
+    edits_requested: ""
+  },
+  advice_outcome: {
+    recommendation: "",
+    rationale: "",
+    sust_fit: "",
+    costs_summary: "",
+    adviser_notes: "",
+    fee_details: {
+      bespoke: false,
+      explanation: ""
+    }
+  },
+  disclosures: {
+    documents: [],
+    agr_disclaimer_presented: false
+  },
+  prod_governance: {
+    target_market_match: null,
+    manufacturer_info_complete: true
+  },
+  timestamps: {
+    explanation_shown_at: null,
+    consent_recorded_at: null,
+    education_completed_at: null,
+    report_generated_at: null,
+    session_closed_at: null
   },
   report: {
     version: "v1.0",
@@ -34,7 +83,14 @@ const createEmptySessionData = () => ({
     signed_url: null,
     status: "draft",
     preview: null
-
+  },
+  audit: {
+    events: [],
+    ip: null,
+    explanation_shown: false,
+    educ_pack_sent: false,
+    guardrail_triggers: [],
+    report_hash: null
   }
 });
 
@@ -47,17 +103,25 @@ export const createSession = ({ ip } = {}) => {
     stage: CONVERSATION_STAGES[0],
     createdAt: timestamp,
     updatedAt: timestamp,
-    data: createEmptySessionData(),
+    data: createEmptySessionData(id),
     events: [],
     context: {
-      profileStep: 0,
-      educationAcknowledged: false,
-      preference: {
-        allocationsCaptured: false,
-        needImpactThemes: false,
-        needEthicalDetail: false,
-        stewardshipAnswered: false
-      }
+      onboardingStep: 0,
+      requireRiskOverride: false,
+      consentStep: 0,
+      education: {
+        acknowledged: false,
+        summaryOffered: false,
+        summarised: false
+      },
+      options: {
+        preferenceLevel: null,
+        step: 0,
+        pendingExclusions: false,
+        pendingImpactDetails: false
+      },
+      confirmationAwaiting: false,
+      reportReady: false
     }
   };
 

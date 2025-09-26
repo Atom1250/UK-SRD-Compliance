@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AdviceSession",
+  "type": "object",
+  "properties": {
+    "session_id": {"type": "string"},
+    "client_profile": {"type": "object"},
+    "sustainability_preferences": {"type": "object"},
+    "consent": {"type": "object"},
+    "summary_confirmation": {"type": "object"},
+    "advice_outcome": {"type": "object"},
+    "disclosures": {"type": "object"},
+    "prod_governance": {"type": "object"},
+    "timestamps": {"type": "object"},
+    "audit": {"type": "object"}
+  }
+}
