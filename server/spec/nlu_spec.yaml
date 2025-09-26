@@ -1,0 +1,21 @@
+intents:
+  - name: capture_goal
+    examples: ["I want long-term growth", "Income focus"]
+  - name: capture_risk
+    examples: ["Medium risk", "Risk 5 out of 7"]
+  - name: capture_exclusions
+    examples: ["Exclude coal", "No tobacco"]
+
+entities:
+  - risk_level
+  - horizon_years
+  - label
+  - theme
+  - exclusion_sector
+  - threshold_value
+  - reporting_frequency
+
+validation_rules:
+  - rule: Require risk & horizon before recommendation
+  - rule: Require thresholds for exclusions
+  - rule: If Impact label chosen, require impact_goals

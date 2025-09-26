@@ -1,32 +1,54 @@
 export const CONVERSATION_STAGES = [
-  "S0_CONSENT",
-  "S1_IDENTITY_PROFILE",
-  "S2_EDUCATION",
-  "S3_PREFERENCE_CAPTURE",
-  "S4_ADVISER_VALIDATION",
-  "S5_PREVIEW_APPROVAL",
-  "S6_E_SIGNATURE",
-  "S7_ARCHIVE"
+  "SEGMENT_A_EXPLANATION",
+  "SEGMENT_B_ONBOARDING",
+  "SEGMENT_C_CONSENT",
+  "SEGMENT_D_EDUCATION",
+  "SEGMENT_E_OPTIONS",
+  "SEGMENT_F_CONFIRMATION",
+  "SEGMENT_G_REPORT",
+  "SEGMENT_H_DELIVERY",
+  "SEGMENT_COMPLETE"
 ];
 
 export const STAGE_PROMPTS = {
-  S0_CONSENT:
-    "Before we begin, please review our privacy disclosure and confirm that we may process your information.",
-  S1_IDENTITY_PROFILE:
-    "Let's capture your contact details, investment horizon, attitude to risk (ATR), and capacity for loss (CfL).",
-  S2_EDUCATION:
-    "Here is an overview of each Preference Pathway. Remember that there is no hierarchy between the strategies.",
-  S3_PREFERENCE_CAPTURE:
-    "Tell me which pathways you would like to pursue and how you would allocate percentages between them.",
-  S4_ADVISER_VALIDATION:
-    "An adviser will confirm that your selections align with your ATR, CfL, and product wrappers.",
-  S5_PREVIEW_APPROVAL:
-    "Please review the draft report before we request your signature.",
-  S6_E_SIGNATURE:
-    "We are preparing the documentation for e-signature.",
-  S7_ARCHIVE:
-    "All signed documents and transcripts are archived in line with our compliance policy."
+  SEGMENT_A_EXPLANATION:
+    "Welcome! I’ll guide you through ESG investing and collect the information your adviser needs. I’ll explain plainly and send a summary at the end. When you're ready, let me know and we'll begin.",
+  SEGMENT_B_ONBOARDING:
+    "Let's capture the core suitability information I need before any recommendation can be made.",
+  SEGMENT_C_CONSENT:
+    "Now I need to confirm your consent preferences for regulatory reporting.",
+  SEGMENT_D_EDUCATION:
+    "I'll walk you through the ESG education pack, including SDR labels and anti-greenwashing safeguards.",
+  SEGMENT_E_OPTIONS:
+    "Tell me about any sustainability options or labels you’re interested in so I can map them to FCA pathways.",
+  SEGMENT_F_CONFIRMATION:
+    "Please review and confirm the information you've provided.",
+  SEGMENT_G_REPORT:
+    "I'm preparing your personalised suitability pack based on everything you've shared.",
+  SEGMENT_H_DELIVERY:
+    "Here is your personalised pack, including your summary, sustainability preferences, label explainer and next steps.",
+  SEGMENT_COMPLETE:
+    "This session has been completed and archived. Start a new session if you need to make changes."
 };
+
+export const CLIENT_TYPES = ["individual", "joint", "trust", "company"];
+export const OBJECTIVE_OPTIONS = [
+  "growth",
+  "income",
+  "preservation",
+  "impact",
+  "other"
+];
+export const RISK_SCALE = [1, 2, 3, 4, 5, 6, 7];
+export const CAPACITY_FOR_LOSS_VALUES = ["low", "medium", "high"];
+
+export const PREFERENCE_LEVELS = ["none", "high_level", "detailed"];
+export const REPORTING_FREQUENCY_OPTIONS = [
+  "none",
+  "quarterly",
+  "semiannual",
+  "annual"
+];
 
 export const PATHWAY_NAMES = [
   "Conventional",
@@ -38,73 +60,6 @@ export const PATHWAY_NAMES = [
   "Ethical",
   "Philanthropy"
 ];
-
-export const PATHWAY_ALIASES = {
-  "Conventional": [
-    "conventional",
-    "traditional",
-    "core"
-  ],
-  "Conventional incl. ESG": [
-    "conventional esg",
-    "conventional including esg",
-    "conventional with esg",
-    "esg"
-  ],
-  "Sustainability: Improvers": [
-    "improvers",
-    "sustainability improvers",
-    "transition"
-  ],
-  "Sustainability: Focus": [
-    "focus",
-    "sustainability focus",
-    "thematic"
-  ],
-  "Sustainability: Impact": [
-    "impact",
-    "sustainability impact",
-    "impact investing"
-  ],
-  "Sustainability: Mixed Goals": [
-    "mixed goals",
-    "mixed",
-    "balanced sustainability"
-  ],
-  "Ethical": [
-    "ethical",
-    "values",
-    "screened"
-  ],
-  "Philanthropy": [
-    "philanthropy",
-    "giving",
-    "charitable"
-  ]
-};
-
-export const PATHWAY_DETAILS = {
-  "Conventional":
-    "Conventional: diversified mainstream investments aiming for long-term growth without specific sustainability screens.",
-  "Conventional incl. ESG":
-    "Conventional incl. ESG: traditional portfolios that also integrate environmental, social, and governance (ESG) considerations in research and stewardship.",
-  "Sustainability: Improvers":
-    "Sustainability – Improvers: targets companies on a journey to improve their sustainability practices with active engagement to accelerate progress.",
-  "Sustainability: Focus":
-    "Sustainability – Focus: concentrates on sustainability themes such as clean energy or water stewardship while staying diversified across assets aligned to those themes.",
-  "Sustainability: Impact":
-    "Sustainability – Impact: invests in solutions delivering measurable positive outcomes alongside financial returns, often linked to UN SDGs.",
-  "Sustainability: Mixed Goals":
-    "Sustainability – Mixed Goals: blends Improvers, Focus, and Impact styles to balance thematic ambition with diversification.",
-  "Ethical":
-    "Ethical: applies positive and negative screens to reflect faith- or values-based preferences, excluding activities you identify.",
-  "Philanthropy":
-    "Philanthropy: channels capital into charitable or grant-making vehicles where financial return may be secondary to mission delivery."
-};
-
-export const ATR_VALUES = ["Cautious", "Balanced", "Adventurous"];
-export const CFL_VALUES = ["Low", "Medium", "High"];
-export const STEWARDSHIP_OPTIONS = ["fund_manager", "client_questionnaire"];
 
 export const EVENT_AUTHORS = [
   "client",

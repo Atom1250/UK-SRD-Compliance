@@ -203,8 +203,9 @@ const handleListCases = (res) => {
     id: session.id,
     stage: session.stage,
     updatedAt: session.updatedAt,
-    clientName: session.data.client?.name ?? null,
-    pathwayCount: session.data.preferences?.pathways?.length ?? 0
+    clientName: session.data.client_profile?.client_type ?? null,
+    pathwayCount:
+      session.data.sustainability_preferences?.labels_interest?.length ?? 0
   }));
 
   sendJSON(res, 200, { cases });
@@ -225,10 +226,24 @@ const handlePatchCase = async (req, res, id) => {
 
   const patch = {};
   if (typeof adviser_notes === "string") {
-    patch.adviser_notes = adviser_notes;
+    patch.advice_outcome = {
+      ...(patch.advice_outcome ?? {}),
+      adviser_notes
+    };
   }
   if (fees && typeof fees === "object") {
-    patch.fees = fees;
+    const feeDetails = {
+      bespoke: Boolean(fees.bespoke),
+      explanation: typeof fees.explanation === "string"
+        ? fees.explanation
+        : session.data.advice_outcome?.fee_details?.explanation ?? ""
+    };
+    patch.advice_outcome = {
+      ...(patch.advice_outcome ?? {}),
+      fee_details: feeDetails,
+      costs_summary:
+        feeDetails.explanation || session.data.advice_outcome?.costs_summary || ""
+    };
   }
   if (overrides && typeof overrides === "object") {
     Object.assign(patch, overrides);
@@ -242,7 +257,8 @@ const handlePatchCase = async (req, res, id) => {
     author: "adviser",
     type: "note",
     content: {
-      adviser_notes: adviser_notes ?? null
+      adviser_notes:
+        patch.advice_outcome?.adviser_notes ?? adviser_notes ?? null
     },
     createdAt: new Date().toISOString()
   });
