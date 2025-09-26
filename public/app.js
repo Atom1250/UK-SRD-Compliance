@@ -10,6 +10,7 @@ const reportSection = document.getElementById("report-section");
 const reportPreview = document.getElementById("report-preview");
 const reportDownload = document.getElementById("report-download");
 
+
 const addMessage = (author, text) => {
   const item = document.createElement("li");
   item.dataset.author = author;
@@ -123,6 +124,7 @@ composer.addEventListener("submit", async (event) => {
 
     setSessionData(eventResponse.session);
     (eventResponse.messages ?? []).forEach((message) =>
+
       addMessage("assistant", message)
     );
   } catch (error) {

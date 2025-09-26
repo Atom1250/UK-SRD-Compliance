@@ -24,6 +24,7 @@ import {
 import { handleEvent } from "./state/conversationEngine.js";
 import { getReportArtifact } from "./report/reportStore.js";
 
+
 const API_PREFIX = "/api";
 
 const readBody = async (req) => {
@@ -118,7 +119,6 @@ const handleAppendEvent = async (req, res, id) => {
   if (stageData) {
     applyDataPatch(session, stageData);
   }
-
   const result = handleEvent(session, event);
   saveSession(session);
 
