@@ -36,26 +36,34 @@ body {
 }
 
 .status {
+  grid-column: 1 / -1;
   display: flex;
-  gap: 2rem;
+  flex-wrap: wrap;
+  gap: 1rem;
   align-items: center;
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 1rem;
-  padding: 1.25rem;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
+  padding: 0.5rem 1rem;
 }
 
-.status h2 {
-  margin: 0;
-  font-size: 1rem;
+.status__item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.status__label {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: #38bdf8;
+  font-weight: 600;
 }
 
-.status p {
-  margin: 0.25rem 0 0;
-  font-weight: 600;
+.status__value {
+  font-weight: 700;
+  color: inherit;
 }
 
 .chat {
@@ -174,6 +182,115 @@ body {
   max-height: 50vh;
   overflow: auto;
   font-size: 0.85rem;
+}
+
+.structured {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  display: grid;
+  gap: 1rem;
+  align-self: start;
+}
+
+.structured form {
+  display: grid;
+  gap: 1rem;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 1rem;
+  padding: 1.25rem;
+}
+
+.confirmation-summary {
+  display: grid;
+  gap: 0.75rem;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+.confirmation-summary__section {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.confirmation-summary__title {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  color: #38bdf8;
+}
+
+.confirmation-summary__item {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.structured form fieldset {
+  border: none;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.structured form legend {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #38bdf8;
+}
+
+.structured label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.95rem;
+}
+
+.structured input,
+.structured select,
+.structured textarea {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  color: inherit;
+  font: inherit;
+}
+
+.structured textarea {
+  min-height: 3.5rem;
+  resize: vertical;
+}
+
+.structured button {
+  justify-self: start;
+  padding: 0.65rem 1.5rem;
+  border-radius: 999px;
+  border: none;
+  font-weight: 600;
+  background: linear-gradient(135deg, #34d399, #10b981);
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.structured button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.structured__hint {
+  font-size: 0.85rem;
+  color: rgba(148, 163, 184, 0.9);
+  margin: 0;
+}
+
+.structured__exclusions {
+  display: grid;
+  gap: 0.5rem;
 }
 
 .report {
