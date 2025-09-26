@@ -1,3 +1,8 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
+
 const escapePdfText = (text) =>
   text
     .replace(/\\/g, "\\\\")
@@ -66,64 +71,84 @@ const buildPdfBuffer = (lines) => {
   return Buffer.from(body, "utf8");
 };
 
-const buildPreview = (session) => {
-  const previewLines = [];
-  const client = session.data.client ?? {};
-  const preferences = session.data.preferences ?? {};
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const TEMPLATE_PATH = path.join(__dirname, "../spec/suitability_report_template.md");
 
-  previewLines.push(`Client: ${client.name ?? "Unknown"}`);
-  previewLines.push(
-    `ATR: ${client.risk?.atr ?? "—"} | CfL: ${client.risk?.cfl ?? "—"} | Horizon: ${client.risk?.horizon_years ?? "—"} years`
-  );
-  previewLines.push("");
-  previewLines.push("Acknowledged informed choice: " +
-    (session.data.acknowledgements?.read_informed_choice ? "Yes" : "No"));
-  previewLines.push("");
-  previewLines.push("Pathway allocations:");
+const loadTemplate = () => readFileSync(TEMPLATE_PATH, "utf8");
 
-  (preferences.pathways ?? []).forEach((pathway) => {
-    const details = [];
-    if (pathway.themes?.length) {
-      details.push(`Themes: ${pathway.themes.join(", ")}`);
+const getValue = (obj, pathExpression) =>
+  pathExpression.split(".").reduce((acc, key) => (acc == null ? acc : acc[key]), obj);
+
+const renderTemplate = (template, context) =>
+  template.replace(/{{\s*([^}]+)\s*}}/g, (_, expression) => {
+    const value = getValue(context, expression.trim());
+    if (value === undefined || value === null) {
+      return "";
     }
-    if (pathway.impact_goals?.length) {
-      details.push(`Impact goals: ${pathway.impact_goals.join(", ")}`);
-    }
-    previewLines.push(
-      `- ${pathway.name} — ${pathway.allocation_pct}%${
-        details.length ? ` (${details.join("; ")})` : ""
-      }`
-    );
+    return String(value);
   });
 
-  if (preferences.ethical?.enabled) {
-    previewLines.push(
-      `Ethical screens: ${preferences.ethical.exclusions.join(", ") || "None specified"}`
-    );
-  }
+const formatExclusions = (exclusions = []) =>
+  exclusions.length === 0
+    ? "None specified"
+    : exclusions
+        .map((item) =>
+          item.threshold != null
+            ? `${item.sector} (<${item.threshold}%)`
+            : item.sector
+        )
+        .join(", ");
 
-  previewLines.push(
-    `Stewardship discretion: ${preferences.stewardship?.discretion ?? "fund_manager"}`
-  );
-  previewLines.push("");
-  previewLines.push(
-    `Products: ${(session.data.products ?? [])
-      .map((item) => item.wrapper)
-      .join(", ") || "Not specified"}`
-  );
-  previewLines.push("");
-  previewLines.push("Adviser notes:");
-  previewLines.push(session.data.adviser_notes || "To be confirmed");
+const buildTemplateContext = (session) => {
+  const profile = session.data.client_profile ?? {};
+  const prefs = session.data.sustainability_preferences ?? {};
+  const outcome = session.data.advice_outcome ?? {};
 
-  return previewLines.join("\n");
+  return {
+    client_profile: {
+      ...profile,
+      knowledge_experience: {
+        summary: profile.knowledge_experience?.summary ?? ""
+      }
+    },
+    sustainability_preferences: {
+      ...prefs,
+      labels_interest:
+        (prefs.labels_interest ?? []).length > 0
+          ? prefs.labels_interest.join(", ")
+          : "None specified",
+      themes:
+        (prefs.themes ?? []).length > 0
+          ? prefs.themes.join(", ")
+          : "None specified",
+      exclusions: formatExclusions(prefs.exclusions ?? []),
+      impact_goals:
+        (prefs.impact_goals ?? []).length > 0
+          ? prefs.impact_goals.join(", ")
+          : "None specified",
+      engagement_importance: prefs.engagement_importance || "Not specified",
+      reporting_frequency_pref: prefs.reporting_frequency_pref || "none",
+      tradeoff_tolerance: prefs.tradeoff_tolerance || "Not specified"
+    },
+    advice_outcome: {
+      recommendation: outcome.recommendation ?? "",
+      rationale: outcome.rationale ?? "",
+      sust_fit: outcome.sust_fit ?? "",
+      costs_summary: outcome.costs_summary ?? ""
+    }
+  };
 };
 
 export const generateReportArtifacts = (session) => {
-  const preview = buildPreview(session);
-  const pdfBuffer = buildPdfBuffer(preview.split("\n"));
+  const template = loadTemplate();
+  const context = buildTemplateContext(session);
+  const rendered = renderTemplate(template, context);
+  const pdfBuffer = buildPdfBuffer(rendered.split(/\r?\n/));
+  const hash = createHash("sha256").update(pdfBuffer).digest("hex");
 
   return {
-    preview,
-    pdfBuffer
+    preview: rendered,
+    pdfBuffer,
+    hash
   };
 };

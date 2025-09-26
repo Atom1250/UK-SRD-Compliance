@@ -12,8 +12,8 @@
         <h1>SDR Preference Pathway Assistant</h1>
         <p>
           This prototype demonstrates the consent → education → preference capture
-          journey described in the SDR specification. All data is stored in memory
-          for the current server session only.
+          journey described in the SDR specification. Sessions are now saved to a
+          durable store so you can refresh the page without losing progress.
         </p>
       </header>
 
@@ -44,6 +44,19 @@
           <button type="submit" id="send-button">Send</button>
           <p id="error" role="alert" class="composer__error" hidden></p>
         </form>
+      </section>
+
+      <section
+        class="structured"
+        aria-live="polite"
+        id="structured-inputs"
+      >
+        <h2>Structured questionnaire</h2>
+        <p>
+          Prefer working with forms? Complete the structured questionnaire for
+          each stage and I’ll apply your answers automatically.
+        </p>
+        <div id="stage-form"></div>
       </section>
 
       <section class="summary" aria-live="polite">
