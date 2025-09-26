@@ -31,7 +31,7 @@ From a second terminal you can hit the same running server with `curl`:
 # health check
 curl -s http://localhost:4000/api/health
 
-# start a new in-memory session
+# start a new advice session
 curl -s -X POST http://localhost:4000/api/sessions | jq '.session.id'
 
 # replace SESSION_ID below with the value returned above
@@ -41,8 +41,10 @@ curl -s http://localhost:4000/api/sessions/SESSION_ID/validate | jq '.validation
 `/validate` now accepts either `GET` or `POST`, so the last command works
 verbatim with the ID returned from the session creation response.
 
-No package installation is required – the server uses only built-in Node
-modules and serves a static HTML/JS interface from `public/`.
+Session data is written to `server/data/sessions.json` (override with the
+`SESSION_DB_PATH` environment variable). The on-disk store survives process
+restarts so you can refresh the client without losing progress.
+
 
 ## Architecture overview
 
@@ -71,8 +73,8 @@ All endpoints live under `/api`:
 | `GET` | `/api/adviser/cases/{id}` | Detailed case view |
 | `PATCH` | `/api/adviser/cases/{id}` | Update adviser commentary / overrides |
 
-The server keeps everything in-memory so restarting the process clears the data
-(including generated PDFs).
+The server uses a lightweight JSON store for persistence (see `server/data/`).
+Delete the file to reset the environment during local testing.
 
 ### Validation rules implemented
 
@@ -92,7 +94,7 @@ report.
 
 ## Next steps
 
-- Persist sessions in PostgreSQL or another durable store instead of memory.
+- Swap the JSON file store for a managed database (e.g. PostgreSQL) when
+  deploying to shared infrastructure.
 - Replace the placeholder DOCX/ESign handlers with real integrations.
-- Expand the front-end to capture structured questionnaire answers per stage.
-- Add automated unit tests for state transitions and validation edge cases.
+- Add end-to-end tests that drive the browser UI through the full ESG journey.

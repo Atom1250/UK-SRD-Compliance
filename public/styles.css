@@ -176,6 +176,86 @@ body {
   font-size: 0.85rem;
 }
 
+.structured {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.structured form {
+  display: grid;
+  gap: 1rem;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 1rem;
+  padding: 1.25rem;
+}
+
+.structured form fieldset {
+  border: none;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.structured form legend {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #38bdf8;
+}
+
+.structured label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.95rem;
+}
+
+.structured input,
+.structured select,
+.structured textarea {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  color: inherit;
+  font: inherit;
+}
+
+.structured textarea {
+  min-height: 3.5rem;
+  resize: vertical;
+}
+
+.structured button {
+  justify-self: start;
+  padding: 0.65rem 1.5rem;
+  border-radius: 999px;
+  border: none;
+  font-weight: 600;
+  background: linear-gradient(135deg, #34d399, #10b981);
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.structured button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.structured__hint {
+  font-size: 0.85rem;
+  color: rgba(148, 163, 184, 0.9);
+  margin: 0;
+}
+
+.structured__exclusions {
+  display: grid;
+  gap: 0.5rem;
+}
+
 .report {
   grid-column: 1 / -1;
   background: rgba(15, 23, 42, 0.6);

@@ -22,7 +22,6 @@ const noPatterns = /\b(no|nope|not (yet|now)|decline|refuse)\b/i;
 
 const normalise = (value) => value.trim().toLowerCase();
 
-
 const splitList = (text) =>
   text
     .split(/[,\n]|\band\b/gi)
@@ -108,6 +107,30 @@ const handleExplanation = (session, text) => {
   session.context.onboardingStep = 0;
   return moveToStage(session, "SEGMENT_B_ONBOARDING", [
     "Are you investing as an individual, joint, trust, or company?"
+  ]);
+};
+
+const handleStructuredExplanation = (session, content) => {
+  if (!content?.ready) {
+    return {
+      messages: [
+        "Let me know when you're ready to begin and I'll open the onboarding form."
+      ]
+    };
+  }
+
+  applyDataPatch(session, {
+    audit: {
+      explanation_shown: true
+    },
+    timestamps: {
+      explanation_shown_at: new Date().toISOString()
+    }
+  });
+
+  session.context.onboardingStep = 0;
+  return moveToStage(session, "SEGMENT_B_ONBOARDING", [
+    "Let's start with your suitability information."
   ]);
 };
 
@@ -348,7 +371,6 @@ const handleOnboarding = (session, text) => {
     return moveToStage(session, "SEGMENT_C_CONSENT", [
       "Thank you. We need your permission to record your answers for regulatory reporting.",
       "Do you consent to us processing your data for this advice session?"
-
     ]);
   }
 
@@ -357,6 +379,126 @@ const handleOnboarding = (session, text) => {
       "Let me summarise before we continue."
     ]
   };
+};
+
+const handleStructuredOnboarding = (session, content) => {
+  const answers = content?.answers ?? {};
+  const profile = session.data.client_profile;
+  const messages = [];
+  const missing = [];
+
+  if (!CLIENT_TYPES.some((type) => normalise(type) === normalise(answers.client_type))) {
+    missing.push("Select a client type (individual, joint, trust, or company).");
+  }
+  if (!answers.objectives || !answers.objectives.trim()) {
+    missing.push("Investment objective is required.");
+  }
+
+  const horizon = Number.parseInt(answers.horizon_years, 10);
+  if (!Number.isInteger(horizon) || horizon <= 0) {
+    missing.push("Provide the investment horizon in whole years.");
+  }
+
+  const risk = Number.parseInt(answers.risk_tolerance, 10);
+  if (!RISK_SCALE.includes(risk)) {
+    missing.push("Select a risk tolerance between 1 and 7.");
+  }
+
+  if (
+    !CAPACITY_FOR_LOSS_VALUES.some(
+      (value) => normalise(value) === normalise(answers.capacity_for_loss)
+    )
+  ) {
+    missing.push("Capacity for loss must be low, medium, or high.");
+  }
+
+  if (!answers.liquidity_needs || !answers.liquidity_needs.trim()) {
+    missing.push("Liquidity needs must be recorded.");
+  }
+
+  if (!answers.knowledge_summary || !answers.knowledge_summary.trim()) {
+    missing.push("Provide a brief summary of the client's knowledge and experience.");
+  }
+
+  if (answers.financial?.provided && (!answers.financial.notes || !answers.financial.notes.trim())) {
+    missing.push("Include context notes for the financial situation.");
+  }
+
+  if (missing.length > 0) {
+    return { messages: missing };
+  }
+
+  profile.client_type = CLIENT_TYPES.find(
+    (type) => normalise(type) === normalise(answers.client_type)
+  );
+  profile.objectives = answers.objectives.trim();
+  profile.horizon_years = horizon;
+  profile.risk_tolerance = risk;
+  profile.capacity_for_loss = answers.capacity_for_loss.trim().toLowerCase();
+  profile.liquidity_needs = answers.liquidity_needs.trim();
+  profile.knowledge_experience.summary = answers.knowledge_summary.trim();
+  profile.knowledge_experience.instruments = Array.isArray(answers.knowledge_instruments)
+    ? answers.knowledge_instruments
+    : splitList(answers.knowledge_summary);
+  profile.knowledge_experience.frequency = answers.knowledge_frequency ?? "";
+  profile.knowledge_experience.duration = answers.knowledge_duration ?? "";
+
+  if (answers.financial?.provided) {
+    profile.financial_situation = {
+      provided: true,
+      income: answers.financial.income ?? null,
+      assets: answers.financial.assets ?? null,
+      liabilities: answers.financial.liabilities ?? null,
+      notes: answers.financial.notes.trim()
+    };
+  } else {
+    profile.financial_situation = {
+      provided: false,
+      income: null,
+      assets: null,
+      liabilities: null,
+      notes: ""
+    };
+  }
+
+  if (profile.horizon_years < 3 && profile.risk_tolerance >= 5) {
+    session.data.audit.guardrail_triggers.push({
+      type: "risk_horizon_warning",
+      triggered_at: new Date().toISOString(),
+      notes: "High risk with short horizon"
+    });
+    messages.push(
+      "⚠️ High risk with a short horizon has been logged for adviser review."
+    );
+  }
+
+  if (profile.risk_tolerance >= 5 && profile.capacity_for_loss === "low") {
+    if (!content?.confirm_override) {
+      session.context.requireRiskOverride = true;
+      return {
+        messages: [
+          "Because you've chosen a high risk tolerance with a low capacity for loss, please confirm you wish to proceed."
+        ]
+      };
+    }
+
+    session.context.requireRiskOverride = false;
+    session.data.audit.guardrail_triggers.push({
+      type: "risk_capacity_override",
+      triggered_at: new Date().toISOString(),
+      confirmed_at: new Date().toISOString()
+    });
+  }
+
+  session.context.onboardingStep = 9;
+  session.context.consentStep = 0;
+
+  messages.push(
+    "We need your permission to record your answers for regulatory reporting."
+  );
+  messages.push("Do you consent to us processing your data for this advice session?");
+
+  return moveToStage(session, "SEGMENT_C_CONSENT", messages);
 };
 
 const handleConsent = (session, text) => {
@@ -452,6 +594,50 @@ const handleConsent = (session, text) => {
   return { messages: [] };
 };
 
+const handleStructuredConsent = (session, content) => {
+  const payload = content?.consent ?? {};
+  if (!payload.data_processing) {
+    return {
+      messages: [
+        "We need your explicit permission to process this information before continuing."
+      ]
+    };
+  }
+
+  const timestamp = payload.timestamp ?? new Date().toISOString();
+  session.data.consent = {
+    data_processing: { granted: true, timestamp },
+    e_delivery: {
+      granted: payload.e_delivery === true,
+      timestamp
+    },
+    future_contact: {
+      granted: payload.future_contact?.granted === true,
+      purpose: payload.future_contact?.purpose ?? ""
+    }
+  };
+
+  if (session.data.consent.future_contact.granted === false) {
+    session.data.consent.future_contact.purpose = "";
+  }
+
+  session.data.timestamps.consent_recorded_at = timestamp;
+  session.context.education = {
+    acknowledged: false,
+    summaryOffered: false,
+    summarised: false
+  };
+
+  return moveToStage(session, "SEGMENT_D_EDUCATION", [
+    "Here’s a quick ESG education pack covering key regulatory points:",
+    "• ESG stands for Environmental, Social, and Governance – it highlights factors, not guaranteed outcomes.",
+    "• UK SDR labels include Focus, Improvers, Impact, and Mixed Goals.",
+    "• The Anti-Greenwashing Rule means we only make evidence-backed sustainability claims.",
+    "• Product disclosures will always be attached for you to review.",
+    "Reply 'Understood' when you’re ready to continue."
+  ]);
+};
+
 const handleEducation = (session, text) => {
   const education = session.context.education ?? {
     acknowledged: false,
@@ -467,7 +653,6 @@ const handleEducation = (session, text) => {
         ]
       };
     }
-
     education.acknowledged = true;
     education.summaryOffered = true;
     session.data.sustainability_preferences.educ_pack_sent = true;
@@ -513,6 +698,40 @@ const handleEducation = (session, text) => {
       "Let’s capture your sustainability preferences."
     ]
   };
+};
+
+const handleStructuredEducation = (session, content) => {
+  if (!content?.acknowledged) {
+    return {
+      messages: [
+        "Please review the education pack and confirm when you’re ready to continue."
+      ]
+    };
+  }
+
+  const wantsSummary = Boolean(content?.wants_summary);
+  session.context.education = {
+    acknowledged: true,
+    summaryOffered: true,
+    summarised: true
+  };
+  session.data.sustainability_preferences.educ_pack_sent = true;
+  session.data.audit.educ_pack_sent = true;
+  session.data.disclosures.agr_disclaimer_presented = true;
+  session.data.timestamps.education_completed_at = new Date().toISOString();
+
+  const messages = [];
+  if (wantsSummary) {
+    messages.push(
+      "Focus funds invest in companies already leading on sustainability factors, whereas Improvers target companies with credible plans to improve."
+    );
+  }
+
+  messages.push(
+    "Do you have sustainability preferences? Choose from: none, high_level, or detailed."
+  );
+
+  return moveToStage(session, "SEGMENT_E_OPTIONS", messages);
 };
 
 const impactChosen = (labels) =>
@@ -712,6 +931,85 @@ const handleOptions = (session, text) => {
   return { messages: [] };
 };
 
+const handleStructuredOptions = (session, content) => {
+  const prefs = content?.preferences ?? {};
+  const level = prefs.preference_level ?? "none";
+
+  if (!PREFERENCE_LEVELS.includes(level)) {
+    return { messages: ["Preference level must be none, high_level, or detailed."] };
+  }
+
+  const labels = Array.isArray(prefs.labels_interest) ? prefs.labels_interest : [];
+  if (level !== "none" && labels.length === 0) {
+    return { messages: ["Please choose at least one SDR label when providing preferences."] };
+  }
+
+  if (
+    level !== "none" &&
+    !labels.every((label) =>
+      PATHWAY_NAMES.some((name) => normalise(name) === normalise(label))
+    )
+  ) {
+    return { messages: ["One or more selected labels are not recognised SDR pathways."] };
+  }
+
+  const exclusions = Array.isArray(prefs.exclusions) ? prefs.exclusions : [];
+  for (const exclusion of exclusions) {
+    if (!exclusion || typeof exclusion !== "object" || !exclusion.sector) {
+      return { messages: ["Each exclusion must include a sector name."] };
+    }
+    if (exclusion.threshold != null && Number.isNaN(Number.parseFloat(exclusion.threshold))) {
+      return { messages: ["Exclusion thresholds must be numeric when provided."] };
+    }
+    if (
+      /fossil/i.test(exclusion.sector) &&
+      (exclusion.threshold == null || Number.isNaN(Number(exclusion.threshold)))
+    ) {
+      return { messages: ["Fossil fuel exclusions require a numeric threshold."] };
+    }
+  }
+
+  const impact = ensureArray(labels).some((label) => /impact/i.test(label));
+  if (impact) {
+    if (!Array.isArray(prefs.impact_goals) || prefs.impact_goals.length === 0) {
+      return { messages: ["Impact-labelled selections require at least one impact goal."] };
+    }
+    if (!prefs.reporting_frequency_pref || prefs.reporting_frequency_pref === "none") {
+      return { messages: ["Impact-labelled selections require a reporting frequency other than 'none'."] };
+    }
+  }
+
+  if (!REPORTING_FREQUENCY_OPTIONS.includes(prefs.reporting_frequency_pref ?? "none")) {
+    return {
+      messages: ["Reporting frequency must be none, quarterly, semiannual, or annual."]
+    };
+  }
+
+  session.data.sustainability_preferences = {
+    preference_level: level,
+    labels_interest: labels,
+    themes: Array.isArray(prefs.themes) ? prefs.themes : [],
+    exclusions,
+    impact_goals: Array.isArray(prefs.impact_goals) ? prefs.impact_goals : [],
+    engagement_importance: prefs.engagement_importance ?? "",
+    reporting_frequency_pref: prefs.reporting_frequency_pref ?? "none",
+    tradeoff_tolerance: prefs.tradeoff_tolerance ?? "",
+    educ_pack_sent: true
+  };
+
+  session.data.disclosures.agr_disclaimer_presented = true;
+  session.context.options = {
+    preferenceLevel: level,
+    step: 5,
+    pendingExclusions: false,
+    pendingImpactDetails: false
+  };
+
+  return moveToStage(session, "SEGMENT_F_CONFIRMATION", [
+    "Here’s what you told me. Please confirm the summary when you're ready."
+  ]);
+};
+
 const buildSummary = (session) => {
   const profile = session.data.client_profile;
   const prefs = session.data.sustainability_preferences;
@@ -776,6 +1074,7 @@ const buildSummary = (session) => {
       `• Reporting frequency preference: ${prefs.reporting_frequency_pref}`
     );
     lines.push(
+
       `• Trade-off tolerance: ${prefs.tradeoff_tolerance || "Not specified"}`
     );
   }
@@ -815,6 +1114,28 @@ const handleConfirmation = (session, text) => {
   session.data.summary_confirmation.client_summary_confirmed = true;
   session.data.summary_confirmation.confirmed_at = new Date().toISOString();
   session.context.confirmationAwaiting = false;
+  setStage(session, "SEGMENT_G_REPORT");
+  return handleReport(session);
+};
+
+const handleStructuredConfirmation = (session, content) => {
+  const confirmation = content?.confirmation ?? {};
+  if (!confirmation.confirmed) {
+    return {
+      messages: [
+        "Please confirm the captured summary before I can generate your report."
+      ]
+    };
+  }
+
+  session.data.summary_confirmation = {
+    client_summary_confirmed: true,
+    confirmed_at: confirmation.confirmed_at ?? new Date().toISOString(),
+    edits_requested: confirmation.edits_requested ?? ""
+  };
+
+  session.context.confirmationAwaiting = false;
+  session.context.reportReady = true;
   setStage(session, "SEGMENT_G_REPORT");
   return handleReport(session);
 };
@@ -915,6 +1236,22 @@ export const handleEvent = (session, event) => {
 
   if (event.author === "assistant" && event.type === "message") {
     return handleAssistantMessage(session, event.content ?? {});
+  }
+
+  if (event.author === "client" && event.type === "data_update") {
+    const structuredHandlers = {
+      SEGMENT_A_EXPLANATION: handleStructuredExplanation,
+      SEGMENT_B_ONBOARDING: handleStructuredOnboarding,
+      SEGMENT_C_CONSENT: handleStructuredConsent,
+      SEGMENT_D_EDUCATION: handleStructuredEducation,
+      SEGMENT_E_OPTIONS: handleStructuredOptions,
+      SEGMENT_F_CONFIRMATION: handleStructuredConfirmation
+    };
+
+    const handler = structuredHandlers[session.stage];
+    if (handler) {
+      return handler(session, event.content ?? {});
+    }
   }
 
   return { messages: [] };

@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { CONVERSATION_STAGES } from "./constants.js";
+import {
+  persistSession,
+  fetchSession,
+  fetchSessions,
+  clearSessions
+} from "../db/sqlite.js";
 
-const sessions = new Map();
 
 const createEmptySessionData = (sessionId) => ({
   session_id: sessionId,
@@ -90,7 +95,6 @@ const createEmptySessionData = (sessionId) => ({
     educ_pack_sent: false,
     guardrail_triggers: [],
     report_hash: null
-
   }
 });
 
@@ -129,13 +133,13 @@ export const createSession = ({ ip } = {}) => {
     session.data.audit.ip = ip;
   }
 
-  sessions.set(id, session);
+  persistSession(session);
   return session;
 };
 
-export const listSessions = () => Array.from(sessions.values());
+export const listSessions = () => fetchSessions();
 
-export const getSession = (id) => sessions.get(id) ?? null;
+export const getSession = (id) => fetchSession(id) ?? null;
 
 const touchSession = (session) => {
   session.updatedAt = new Date().toISOString();
@@ -144,7 +148,7 @@ const touchSession = (session) => {
 
 export const saveSession = (session) => {
   touchSession(session);
-  sessions.set(session.id, session);
+  persistSession(session);
   return session;
 };
 
@@ -155,6 +159,7 @@ export const setStage = (session, stage) => {
 
   session.stage = stage;
   touchSession(session);
+  persistSession(session);
   return session;
 };
 
@@ -192,6 +197,7 @@ export const applyDataPatch = (session, patch) => {
 
   deepMerge(session.data, patch);
   touchSession(session);
+  persistSession(session);
   return session;
 };
 
@@ -204,10 +210,15 @@ export const appendEvent = (session, event) => {
     createdAt: event.createdAt
   });
   touchSession(session);
+  persistSession(session);
   return session;
 };
 
 export const toPublicSession = (session) => {
   const clone = structuredClone(session);
   return clone;
+};
+
+export const resetSessions = () => {
+  clearSessions();
 };
