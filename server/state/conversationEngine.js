@@ -653,7 +653,6 @@ const handleEducation = (session, text) => {
         ]
       };
     }
-
     education.acknowledged = true;
     education.summaryOffered = true;
     session.data.sustainability_preferences.educ_pack_sent = true;

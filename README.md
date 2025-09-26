@@ -53,7 +53,6 @@ restarts so you can refresh the client without losing progress.
   panel shows the evolving session payload and the report section surfaces the
   rendered preview + PDF download when available.
 
-
 ### API surface
 
 All endpoints live under `/api`:
