@@ -8,6 +8,7 @@ progression. The conversation engine now reacts to user inputs, records answers
 into the canonical JSON structure, and generates a downloadable PDF summary once
 the client approves the draft.
 
+
 ## Running the prototype
 
 1. Ensure Node.js ≥ 18 is available (the environment already provides npm 11.6).

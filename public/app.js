@@ -10,6 +10,7 @@ const reportSection = document.getElementById("report-section");
 const reportPreview = document.getElementById("report-preview");
 const reportDownload = document.getElementById("report-download");
 
+
 const addMessage = (author, text) => {
   const item = document.createElement("li");
   item.dataset.author = author;

@@ -118,7 +118,6 @@ const handleAppendEvent = async (req, res, id) => {
   if (stageData) {
     applyDataPatch(session, stageData);
   }
-
   const result = handleEvent(session, event);
   saveSession(session);
 

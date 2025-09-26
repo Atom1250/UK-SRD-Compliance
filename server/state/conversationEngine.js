@@ -3,6 +3,7 @@ import {
   CFL_VALUES,
   PATHWAY_ALIASES,
   PATHWAY_DETAILS,
+
   PATHWAY_NAMES,
   STEWARDSHIP_OPTIONS,
   STAGE_PROMPTS
@@ -274,6 +275,7 @@ const handleProfile = (session, text) => {
     return moveToStage(session, "S2_EDUCATION", [
       "Great. Here's a quick overview of each pathway: Conventional, Conventional incl. ESG, Improvers, Focus, Impact, Mixed Goals, Ethical, and Philanthropy. None is ranked above the others—they simply suit different objectives.",
       "If you'd like more detail about any pathway, just mention its name (for example, 'Tell me about Focus') and I'll expand.",
+
       "Please confirm once you've read this summary so we can record your informed choice acknowledgment."
     ]);
   }
