@@ -653,7 +653,6 @@ const handleEducation = (session, text) => {
         ]
       };
     }
-
     education.acknowledged = true;
     education.summaryOffered = true;
     session.data.sustainability_preferences.educ_pack_sent = true;
@@ -1075,6 +1074,7 @@ const buildSummary = (session) => {
       `• Reporting frequency preference: ${prefs.reporting_frequency_pref}`
     );
     lines.push(
+
       `• Trade-off tolerance: ${prefs.tradeoff_tolerance || "Not specified"}`
     );
   }

@@ -45,6 +45,7 @@ Session data is written to `server/data/sessions.json` (override with the
 `SESSION_DB_PATH` environment variable). The on-disk store survives process
 restarts so you can refresh the client without losing progress.
 
+
 ## Architecture overview
 
 - `server/` contains a lightweight HTTP router, conversation state machine, and
@@ -52,7 +53,6 @@ restarts so you can refresh the client without losing progress.
 - `public/` provides an accessible chat UI that exercises the API. The summary
   panel shows the evolving session payload and the report section surfaces the
   rendered preview + PDF download when available.
-
 
 ### API surface
 
@@ -75,7 +75,6 @@ All endpoints live under `/api`:
 
 The server uses a lightweight JSON store for persistence (see `server/data/`).
 Delete the file to reset the environment during local testing.
-
 
 ### Validation rules implemented
 
