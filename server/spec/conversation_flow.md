@@ -80,6 +80,15 @@ Outputs:
 
 ---
 
+## Adaptive Dialogue Enhancements
+- Warm tone with acknowledgements ("Thanks for sharing...", "That makes sense.") and confirmation prompts restating the client's goals and horizon.
+- Educational detours: when the client asks for explainers (e.g. "Tell me more about Impact investing"), the assistant delivers a short summary, offers a PDF, logs the topic in `educational_requests[]`, then asks, "Would you like to continue where we left off?"
+- Compliance clarifications: if the client asks "Why do you need that?", the assistant explains the relevant COBS 9A/PROD requirement, logs the query in `extra_questions[]`, and re-asks the pending suitability question.
+- Progress reminder midway through ("We're halfway through. Just a few more questions about your ESG preferences.").
+- Additional audit notes recorded in `additional_notes` for adviser context.
+
+---
+
 # Compliance Guardrails
 - Consumer Duty: plain language + comprehension checks.
 - COBS 9A: suitability fields complete before recommendation.
