@@ -28,6 +28,18 @@
         </span>
       </section>
 
+      <button
+        type="button"
+        id="view-education-pack"
+        class="education-pack-toggle"
+        aria-controls="education-pack"
+        aria-expanded="false"
+        hidden
+      >
+        View ESG education pack
+      </button>
+
+
       <section class="interaction" aria-live="polite" aria-label="Assistant prompt">
         <div class="interaction__prompt">
           <h2>Assistant question</h2>
@@ -82,6 +94,116 @@
         <a id="report-download" href="#" download="preference-pathway.pdf">
           Download PDF report
         </a>
+      </section>
+
+      <section
+        id="education-pack"
+        class="education-pack"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="education-pack-title"
+        tabindex="-1"
+        hidden
+      >
+        <div class="education-pack__header">
+          <h2 id="education-pack-title">ESG education pack</h2>
+          <button type="button" id="close-education-pack" class="education-pack__close">
+            Return to questionnaire
+          </button>
+        </div>
+        <div class="education-pack__intro">
+          <p>
+            This pack summarises the key sustainability disclosures required by the
+            FCA’s Sustainability Disclosure Requirements (SDR) and Consumer Duty.
+            Review the highlights below and let us know when you’re ready to
+            continue.
+          </p>
+        </div>
+        <div class="education-pack__content">
+          <section>
+            <h3>1. ESG essentials</h3>
+            <ul>
+              <li>ESG stands for Environmental, Social and Governance factors.</li>
+              <li>
+                These factors highlight sustainability characteristics but do not
+                guarantee positive outcomes or investment performance.
+              </li>
+              <li>
+                We assess ESG data alongside financial suitability to make
+                balanced recommendations.
+              </li>
+            </ul>
+          </section>
+          <section>
+            <h3>2. FCA SDR labels</h3>
+            <p>The four labels help you understand a fund’s sustainability focus:</p>
+            <ul>
+              <li><strong>Focus</strong>: invests mainly in companies already leading on sustainability.</li>
+              <li><strong>Improvers</strong>: supports companies working to raise their sustainability performance.</li>
+              <li><strong>Impact</strong>: targets investments delivering measurable real-world outcomes.</li>
+              <li><strong>Mixed Goals</strong>: blends sustainability aims with traditional financial goals.</li>
+            </ul>
+          </section>
+          <section>
+            <h3>3. Anti-Greenwashing safeguards</h3>
+            <ul>
+              <li>
+                We only describe a product as sustainable when evidence supports the
+                claim.
+              </li>
+              <li>
+                Disclosures and fact sheets are provided with every recommendation
+                for you to review.
+              </li>
+              <li>
+                You can request more detail or supporting documents at any time.
+              </li>
+            </ul>
+          </section>
+          <section>
+            <h3>4. Risks, trade-offs, and governance</h3>
+            <ul>
+              <li>
+                Sustainable investments can still rise or fall in value and may
+                underperform broader markets over certain periods.
+              </li>
+              <li>
+                Product governance rules require us to match you with suitable
+                solutions based on your goals, timeline, and risk appetite.
+              </li>
+              <li>
+                Stewardship expectations guide how managers engage with companies
+                to drive improvements.
+              </li>
+            </ul>
+          </section>
+          <section>
+            <h3>5. Switching considerations</h3>
+            <ul>
+              <li>
+                Moving from an existing product could trigger costs, exit charges,
+                or capital gains.
+              </li>
+              <li>
+                We factor these impacts into suitability assessments before
+                recommending any changes.
+              </li>
+              <li>
+                Let us know if you have any restrictions or timelines we should
+                consider before switching.
+              </li>
+            </ul>
+          </section>
+        </div>
+        <footer class="education-pack__footer">
+          <p>
+            Need the full explainer or disclosures? Ask the assistant and we’ll
+            attach the detailed PDF pack for download.
+          </p>
+          <button type="button" class="education-pack__close" id="return-to-questionnaire">
+            Close and continue
+          </button>
+        </footer>
       </section>
     </main>
 
