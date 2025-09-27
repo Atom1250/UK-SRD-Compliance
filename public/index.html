@@ -28,22 +28,30 @@
         </span>
       </section>
 
-      <section class="chat" aria-label="Chat transcript">
-        <ul id="messages" class="chat__messages"></ul>
+      <section class="interaction" aria-live="polite" aria-label="Assistant prompt">
+        <div class="interaction__prompt">
+          <h2>Assistant question</h2>
+          <p id="current-prompt" class="interaction__prompt-text">
+            Loading the first prompt…
+          </p>
+        </div>
         <form id="composer" class="composer" autocomplete="off">
-          <label class="composer__label" for="message-input">
-            Respond to continue the onboarding conversation
-          </label>
+          <label class="composer__label" for="message-input">Your response</label>
           <textarea
             id="message-input"
             name="message"
             required
-            placeholder="Type your response"
+            placeholder="Share your reply"
             rows="3"
           ></textarea>
           <button type="submit" id="send-button">Send</button>
           <p id="error" role="alert" class="composer__error" hidden></p>
         </form>
+      </section>
+
+      <section class="chat" aria-label="Conversation transcript">
+        <h2 class="chat__title">Conversation transcript</h2>
+        <ul id="messages" class="chat__messages"></ul>
       </section>
 
       <section
