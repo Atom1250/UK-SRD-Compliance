@@ -1,4 +1,5 @@
 const messagesList = document.getElementById("messages");
+const promptText = document.getElementById("current-prompt");
 const stageLabel = document.getElementById("stage");
 const sessionIdLabel = document.getElementById("session-id");
 const sessionDataBlock = document.getElementById("session-data");
@@ -32,6 +33,12 @@ const REPORTING_FREQUENCY_OPTIONS = [
   "annual"
 ];
 
+const setActivePrompt = (text) => {
+  if (!promptText) return;
+  const trimmed = String(text ?? "").trim();
+  promptText.textContent = trimmed || "Waiting for the assistant…";
+};
+
 const addMessage = (author, text) => {
   const item = document.createElement("li");
   item.dataset.author = author;
@@ -45,18 +52,20 @@ const addMessage = (author, text) => {
   item.appendChild(label);
   item.appendChild(body);
 
-  if (messagesList.firstChild) {
-    messagesList.insertBefore(item, messagesList.firstChild);
-  } else {
-    messagesList.appendChild(item);
-  }
+  messagesList.appendChild(item);
 
   if (typeof messagesList.scrollTo === "function") {
-    messagesList.scrollTo({ top: 0, behavior: "smooth" });
+    messagesList.scrollTo({
+      top: messagesList.scrollHeight,
+      behavior: "smooth"
+    });
   } else {
-    messagesList.scrollTop = 0;
+    messagesList.scrollTop = messagesList.scrollHeight;
   }
-  item.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  if (author === "assistant") {
+    setActivePrompt(text);
+  }
 };
 
 const setStage = (stage) => {
