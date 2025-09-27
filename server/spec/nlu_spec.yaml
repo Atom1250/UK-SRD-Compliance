@@ -5,6 +5,10 @@ intents:
     examples: ["Medium risk", "Risk 5 out of 7"]
   - name: capture_exclusions
     examples: ["Exclude coal", "No tobacco"]
+  - name: educational_request
+    examples: ["Tell me more about Impact investing", "What is Anti-Greenwashing?"]
+  - name: extra_question
+    examples: ["Why do you need that?", "How will this information be used?"]
 
 entities:
   - risk_level
