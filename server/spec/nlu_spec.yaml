@@ -10,6 +10,7 @@ intents:
   - name: extra_question
     examples: ["Why do you need that?", "What’s this for?"]
 
+
 entities:
   - risk_level
   - horizon_years

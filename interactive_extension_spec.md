@@ -10,6 +10,7 @@ This spec extends the structured conversation to support a personable, adaptive,
 - Acknowledge responses: “That makes sense,” “Thanks for sharing,” “Appreciate the detail.”
 - Restate goals for confirmation before moving on.
 
+
 ---
 
 ## 2. Adaptive Dialogue
