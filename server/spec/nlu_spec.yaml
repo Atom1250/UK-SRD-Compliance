@@ -6,9 +6,10 @@ intents:
   - name: capture_exclusions
     examples: ["Exclude coal", "No tobacco"]
   - name: educational_request
-    examples: ["Tell me more about Impact investing", "What is Anti-Greenwashing?"]
+    examples: ["Tell me more about Impact", "What is Anti-Greenwashing?"]
   - name: extra_question
-    examples: ["Why do you need that?", "How will this information be used?"]
+    examples: ["Why do you need that?", "What’s this for?"]
+
 
 entities:
   - risk_level
@@ -23,3 +24,4 @@ validation_rules:
   - rule: Require risk & horizon before recommendation
   - rule: Require thresholds for exclusions
   - rule: If Impact label chosen, require impact_goals
+  - rule: All required suitability fields must be captured before final report
