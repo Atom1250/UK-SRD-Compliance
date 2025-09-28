@@ -12,6 +12,15 @@
     "disclosures": {"type": "object"},
     "prod_governance": {"type": "object"},
     "timestamps": {"type": "object"},
-    "audit": {"type": "object"}
+    "audit": {"type": "object"},
+    "educational_requests": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "extra_questions": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "additional_notes": {"type": "string"}
   }
 }

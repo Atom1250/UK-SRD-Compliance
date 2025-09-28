@@ -11,6 +11,32 @@ body {
   min-height: 100vh;
 }
 
+.education-pack-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 0.75rem;
+  background: rgba(30, 41, 59, 0.75);
+  color: #f8fafc;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+.education-pack-toggle:hover,
+.education-pack-toggle:focus-visible {
+  background: rgba(59, 130, 246, 0.75);
+}
+
+.education-pack-toggle:focus-visible {
+  outline: 2px solid rgba(148, 197, 255, 0.9);
+  outline-offset: 2px;
+}
+
 .app {
   display: grid;
   grid-template-columns: 2fr 1fr;
@@ -66,6 +92,34 @@ body {
   color: inherit;
 }
 
+.interaction {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.interaction__prompt {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.interaction__prompt h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #38bdf8;
+}
+
+.interaction__prompt-text {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
 .chat {
   background: rgba(15, 23, 42, 0.6);
   border: 1px solid rgba(148, 163, 184, 0.3);
@@ -76,6 +130,14 @@ body {
   gap: 1rem;
 }
 
+.chat__title {
+  margin: 0;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #38bdf8;
+}
+
 .chat__messages {
   list-style: none;
   margin: 0;
@@ -83,7 +145,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  max-height: 55vh;
+  max-height: 45vh;
   overflow-y: auto;
 }
 
@@ -334,6 +396,110 @@ body {
   box-shadow: 0 10px 20px rgba(56, 189, 248, 0.35);
 }
 
+.education-pack {
+  position: fixed;
+  inset: 2rem;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 2rem;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 1.25rem;
+  box-shadow: 0 24px 64px rgba(8, 15, 32, 0.6);
+  color: #f8fafc;
+  overflow-y: auto;
+}
+
+.education-pack[hidden] {
+  display: none !important;
+}
+
+.education-pack__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.education-pack__intro {
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.education-pack__content {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.education-pack__content section {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 1rem;
+  padding: 1.25rem;
+}
+
+.education-pack__content section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+  color: #38bdf8;
+}
+
+.education-pack__content ul {
+  margin: 0;
+  padding-left: 1.25rem;
+  line-height: 1.6;
+}
+
+.education-pack__footer {
+  border-top: 1px solid rgba(148, 163, 184, 0.35);
+  padding-top: 1rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.education-pack__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.75rem;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.75rem;
+  border: none;
+  background: #38bdf8;
+  color: #0f172a;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+.education-pack__close:hover,
+.education-pack__close:focus-visible {
+  background: #0ea5e9;
+}
+
+.education-pack__close:focus-visible {
+  outline: 2px solid rgba(148, 197, 255, 0.9);
+  outline-offset: 2px;
+}
+
+body.education-pack-open {
+  overflow: hidden;
+}
+
+body.education-pack-open .interaction,
+body.education-pack-open .chat,
+body.education-pack-open .structured,
+body.education-pack-open .summary,
+body.education-pack-open .report {
+  display: none;
+}
+
+body.education-pack-open .education-pack-toggle {
+  display: none;
+}
+
 @media (max-width: 900px) {
   .app {
     grid-template-columns: 1fr;
@@ -342,5 +508,12 @@ body {
   .status {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 768px) {
+  .education-pack {
+    inset: 0;
+    border-radius: 0;
   }
 }

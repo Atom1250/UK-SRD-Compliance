@@ -94,7 +94,10 @@ const createEmptySessionData = (sessionId) => ({
     educ_pack_sent: false,
     guardrail_triggers: [],
     report_hash: null
-  }
+  },
+  educational_requests: [],
+  extra_questions: [],
+  additional_notes: ""
 });
 
 export const createSession = ({ ip } = {}) => {

@@ -41,6 +41,439 @@ const parseMoneyValue = (text, keyword) => {
   return Number.isFinite(numeric) ? numeric : null;
 };
 
+const ONBOARDING_QUESTIONS = {
+  0: "Are you investing as an individual, joint, trust, or company?",
+  1: "What’s your main investment goal? (growth, income, preservation, impact, or other)",
+  2: "How long do you expect to keep this money invested? Please provide the number of years.",
+  3: "On a scale of 1 (very low) to 7 (very high), how comfortable are you with investment risk?",
+  4: "If markets fall, how much loss could you afford without affecting your lifestyle? (low, medium, high)",
+  5: "Will you need to withdraw funds at specific times?",
+  6: "Have you invested before? Please describe which instruments, how often, and for how long.",
+  7: "Would you like to record income, assets, and liabilities for context?",
+  8: "Please share any income, assets, and liabilities you’d like recorded (for example: Income £60k, Assets £250k, Liabilities £40k)."
+};
+
+const CONSENT_QUESTIONS = {
+  0: "Do you consent to us processing your data for this advice session?",
+  1: "Do you consent to receive documents electronically (e-delivery)?",
+  2: "Can we contact you in the future with relevant updates?",
+  3: "What purpose should we note for future contact (for example, annual review or product updates)?"
+};
+
+const OPTIONS_QUESTIONS = {
+  preferenceLevel: "Do you have sustainability preferences? Choose from: none, high_level, or detailed.",
+  1: "Which FCA SDR labels interest you?",
+  2: "Are there particular sustainability themes you want to focus on? (e.g. climate, biodiversity, social equity)",
+  3: "Please list any exclusions and thresholds (for example: Fossil fuels under 5%, Tobacco 0%).",
+  4: "Do you have any specific impact goals (for example: SDG 7 affordable clean energy)?",
+  5: "How important is active stewardship or engagement from managers?",
+  6: "How often would you like sustainability reporting updates? (none, quarterly, semiannual, annual)",
+  7: "How much investment performance trade-off are you willing to accept for sustainability outcomes?"
+};
+
+const COMPLIANCE_REASONS = {
+  SEGMENT_B_ONBOARDING: {
+    0: "I record whether you’re investing as an individual, joint client, trust, or company so Consumer Duty and PROD checks line up with the right permissions.",
+    1: "Understanding your main goal helps me evidence suitability against COBS 9A – advice must reflect what you’re trying to achieve.",
+    2: "Knowing your investment horizon lets me check that any strategy remains suitable over time, which the rules require.",
+    3: "Capturing your risk tolerance ensures recommendations match the level of volatility you can handle under COBS 9A.",
+    4: "Capacity for loss is a mandatory field so we understand how much downside you can absorb before your lifestyle is affected.",
+    5: "Liquidity needs stop us from locking money away when you might need access – that’s part of the PROD governance checks.",
+    6: "Your knowledge and experience guide me toward products that are appropriate for you.",
+    7: "Financial context helps an adviser check affordability and Consumer Duty outcomes, even if you opt to keep it high level.",
+    8: "Those financial notes give the adviser evidence for affordability and ongoing suitability reviews.",
+    risk_override:
+      "Because you selected a higher risk level than your loss capacity, I must double-check you’re comfortable proceeding to satisfy COBS 9A."
+  },
+  SEGMENT_C_CONSENT: {
+    0: "Data processing consent is required before we can store or use the information you share.",
+    1: "E-delivery consent confirms you’re happy to receive disclosures digitally, which we must evidence.",
+    2: "Future contact permissions make sure we respect marketing rules and your preferences.",
+    3: "Recording the purpose of future contact shows we’ll only reach out for the reasons you agree to."
+  },
+  SEGMENT_D_EDUCATION: {
+    acknowledgement:
+      "The FCA’s Anti-Greenwashing and SDR rules expect us to show you how sustainability claims are evidenced before we continue.",
+    summary:
+      "Making sure you understand the difference between SDR labels helps keep any recommendation fair, clear, and not misleading."
+  },
+  SEGMENT_E_OPTIONS: {
+    preferenceLevel:
+      "Capturing your preference level lets me map you to the right SDR sustainability pathway.",
+    1: "Label interests show which SDR categories align with your goals so we only shortlist suitable options.",
+    2: "Themes help us prioritise the ESG outcomes you care about when reviewing products.",
+    3: "Exclusions need clear thresholds so we avoid funds that would conflict with your values and Anti-Greenwashing commitments.",
+    4: "Impact goals are required evidence if we pursue Impact-labelled investments.",
+    5: "Stewardship preferences guide how actively managers should engage on your behalf.",
+    6: "Reporting frequency ensures we deliver updates often enough to evidence sustainability outcomes.",
+    7: "Understanding trade-off tolerance helps balance sustainability aims with performance expectations."
+  },
+  SEGMENT_F_CONFIRMATION: {
+    0: "I’ll replay everything so you can confirm it’s accurate before we generate any reports."
+  }
+};
+
+const EDUCATION_MODULES = [
+  {
+    title: "ESG basics",
+    keywords: [/\bwhat is esg\b/i, /\besg basics\b/i, /tell me more about esg/i],
+    summary:
+      "ESG stands for Environmental, Social, and Governance factors – it’s a framework for understanding how companies behave, not a guarantee of positive outcomes."
+  },
+  {
+    title: "Impact investing",
+    keywords: [/impact investing/i],
+    summary:
+      "Impact investing aims for measurable environmental or social outcomes alongside returns. Under the FCA’s Impact label we must evidence those outcomes through stewardship and transparent reporting."
+  },
+  {
+    title: "FCA SDR labels",
+    keywords: [/sdr labels?/i, /tell me more about labels/i],
+    summary:
+      "The FCA SDR labels include Focus, Improvers, Impact, and Mixed Goals. Each label signals how a product pursues sustainability outcomes and what evidence it must provide."
+  },
+  {
+    title: "Anti-Greenwashing",
+    keywords: [/anti[- ]?greenwashing/i],
+    summary:
+      "The Anti-Greenwashing Rule means any sustainability claim we make must be fair, clear, and backed by evidence. We attach disclosures so you can verify what’s promised."
+  },
+  {
+    title: "Risks & trade-offs",
+    keywords: [/sustainability risks/i, /trade[- ]?offs/i, /risks of esg/i],
+    summary:
+      "Sustainable investing can involve tracking error, sector concentration, or short-term underperformance. We weigh those trade-offs so you know where outcomes might differ from the broad market."
+  },
+  {
+    title: "Product governance",
+    keywords: [/product governance/i, /prod 3/i],
+    summary:
+      "Product governance (PROD 3) requires us to match you with solutions designed for your target market and to document how the manufacturer supports those outcomes."
+  },
+  {
+    title: "Switching considerations",
+    keywords: [/switching/i, /move my investments/i],
+    summary:
+      "When switching investments we compare costs, exit penalties, and whether the new product genuinely improves sustainability outcomes before recommending a change."
+  },
+  {
+    title: "Focus vs Improvers",
+    keywords: [/focus vs improvers/i, /difference between focus and improvers/i],
+    summary:
+      "Focus funds back companies already leading on sustainability, while Improvers support firms with credible plans to get better through engagement."
+  },
+  {
+    title: "Exclusions examples",
+    keywords: [/examples of exclusions/i, /what exclusions/i],
+    summary:
+      "Common exclusions include fossil fuels above a set revenue threshold, tobacco, controversial weapons, and severe human-rights breaches."
+  },
+  {
+    title: "Stewardship",
+    keywords: [/what does stewardship mean/i, /tell me about stewardship/i, /engagement mean/i],
+    summary:
+      "Stewardship means fund managers using voting rights and engagement to push companies toward better sustainability practices."
+  }
+];
+
+const whyNeedPattern = /why do you need( to know)?/i;
+
+const ensureStringArray = (value) => (Array.isArray(value) ? value : []);
+
+const appendSessionArrayEntry = (session, key, entry) => {
+  if (!entry) return;
+  if (!Array.isArray(session.data[key])) {
+    session.data[key] = [];
+  }
+  session.data[key].push(entry);
+};
+
+const appendAdditionalNote = (session, note) => {
+  if (!note) return;
+  const existing = session.data.additional_notes ?? "";
+  session.data.additional_notes = existing ? `${existing}\n${note}` : note;
+};
+
+const removeTrailingQuestionMark = (question = "") => {
+  const trimmed = question.trim();
+  return trimmed.endsWith("?") ? trimmed.slice(0, -1) : trimmed;
+};
+
+const getActiveQuestion = (session) => {
+  if (session.context?.requireRiskOverride) {
+    return "Please confirm you wish to proceed with a higher risk tolerance despite a low capacity for loss.";
+  }
+
+  switch (session.stage) {
+    case "SEGMENT_B_ONBOARDING": {
+      const step = session.context.onboardingStep ?? 0;
+      return ONBOARDING_QUESTIONS[step] ?? null;
+    }
+    case "SEGMENT_C_CONSENT": {
+      const step = session.context.consentStep ?? 0;
+      return CONSENT_QUESTIONS[step] ?? null;
+    }
+    case "SEGMENT_D_EDUCATION": {
+      const education = session.context.education ?? {};
+      if (!education.acknowledged) {
+        return "Please let me know once you’ve reviewed the ESG education points so we can continue.";
+      }
+      if (education.summaryOffered && !education.summarised) {
+        return "Would you like me to summarise the difference between Focus and Improvers labels?";
+      }
+      return null;
+    }
+    case "SEGMENT_E_OPTIONS": {
+      const options = session.context.options ?? {};
+      if (!options.preferenceLevel) {
+        return OPTIONS_QUESTIONS.preferenceLevel;
+      }
+      const step = options.step ?? 1;
+      return OPTIONS_QUESTIONS[step] ?? null;
+    }
+    case "SEGMENT_F_CONFIRMATION":
+      return "Shall I walk through your summary so you can confirm everything is correct?";
+    default:
+      return null;
+  }
+};
+
+const buildResumePrompt = (session) => {
+  const question = getActiveQuestion(session);
+  if (!question) {
+    return "Would you like to continue where we left off?";
+  }
+  const base = removeTrailingQuestionMark(question);
+  return `Would you like to continue where we left off and answer "${base}?"`;
+};
+
+const getComplianceRationale = (session) => {
+  if (session.context?.requireRiskOverride) {
+    return COMPLIANCE_REASONS.SEGMENT_B_ONBOARDING.risk_override;
+  }
+
+  const reasons = COMPLIANCE_REASONS[session.stage];
+  if (!reasons) {
+    return "I ask so we can keep the conversation compliant with the FCA’s Consumer Duty and SDR requirements.";
+  }
+
+  if (session.stage === "SEGMENT_D_EDUCATION") {
+    const education = session.context.education ?? {};
+    if (!education.acknowledged) {
+      return reasons.acknowledgement ?? reasons.summary;
+    }
+    if (education.summaryOffered && !education.summarised) {
+      return reasons.summary;
+    }
+  }
+
+  if (session.stage === "SEGMENT_E_OPTIONS") {
+    const options = session.context.options ?? {};
+    if (!options.preferenceLevel) {
+      return reasons.preferenceLevel;
+    }
+    const step = options.step ?? 1;
+    return reasons[step] ?? reasons.preferenceLevel;
+  }
+
+  if (session.stage === "SEGMENT_F_CONFIRMATION") {
+    return reasons[0];
+  }
+
+  const stepKey = session.stage === "SEGMENT_B_ONBOARDING"
+    ? session.context.onboardingStep ?? 0
+    : session.stage === "SEGMENT_C_CONSENT"
+      ? session.context.consentStep ?? 0
+      : null;
+
+  return (stepKey != null && reasons[stepKey])
+    ? reasons[stepKey]
+    : "I ask so we can keep the conversation compliant with the FCA’s Consumer Duty and SDR requirements.";
+};
+
+const findEducationModule = (text) =>
+  EDUCATION_MODULES.find((module) =>
+    module.keywords.some((pattern) => pattern.test(text))
+  ) ?? null;
+
+const logEducationalRequest = (session, text, moduleTitle) => {
+  const entry = `Answered: ${moduleTitle} ("${text.trim()}")`;
+  appendSessionArrayEntry(session, "educational_requests", entry);
+  appendAdditionalNote(session, `${moduleTitle} summary shared.`);
+};
+
+const logExtraQuestion = (session, text) => {
+  const entry = `Answered (${session.stage}): ${text.trim()}`;
+  appendSessionArrayEntry(session, "extra_questions", entry);
+  appendAdditionalNote(session, `Explained compliance rationale for "${text.trim()}".`);
+};
+
+const handleDetours = (session, text) => {
+  if (!text) return null;
+
+  const module = findEducationModule(text);
+  if (module) {
+    logEducationalRequest(session, text, module.title);
+    const resumePrompt = buildResumePrompt(session);
+    return {
+      messages: [
+        `Happy to help. ${module.summary}`,
+        `Would you like the full ${module.title} explainer PDF?`,
+        resumePrompt
+      ]
+    };
+  }
+
+  if (whyNeedPattern.test(text)) {
+    logExtraQuestion(session, text);
+    const resumePrompt = buildResumePrompt(session);
+    return {
+      messages: [
+        "Thanks for asking—that’s a thoughtful question.",
+        getComplianceRationale(session),
+        resumePrompt
+      ]
+    };
+  }
+
+  return null;
+};
+
+const extractHorizonYears = (text) => {
+  const match = text.match(/(\d{1,3})\s*(years?|yrs?)/i);
+  if (match) {
+    const value = Number.parseInt(match[1], 10);
+    if (Number.isInteger(value) && value > 0) {
+      return value;
+    }
+  }
+  const trimmed = text.trim();
+  if (/^\d+$/.test(trimmed)) {
+    const numeric = Number.parseInt(trimmed, 10);
+    if (Number.isInteger(numeric) && numeric > 0) {
+      return numeric;
+    }
+  }
+  return null;
+};
+
+const riskWordMap = {
+  "very low": 1,
+  low: 2,
+  moderate: 4,
+  medium: 4,
+  balanced: 4,
+  high: 6,
+  "very high": 7
+};
+
+const extractRiskTolerance = (text) => {
+  const direct = text.match(/risk(?: tolerance| level)?[^0-9]*([1-7])/i);
+  if (direct) {
+    return Number.parseInt(direct[1], 10);
+  }
+
+  if (/^\s*[1-7]\s*$/.test(text)) {
+    return Number.parseInt(text.trim(), 10);
+  }
+
+  const wordMatch = text.match(/(very\s+low|very\s+high|low|medium|moderate|balanced|high)\s+risk/i);
+  if (wordMatch) {
+    return riskWordMap[wordMatch[1].toLowerCase()] ?? null;
+  }
+
+  const trailingMatch = text.match(/risk[^a-z]*(low|medium|moderate|balanced|high|very\s+low|very\s+high)/i);
+  if (trailingMatch) {
+    return riskWordMap[trailingMatch[1].toLowerCase()] ?? null;
+  }
+
+  return null;
+};
+
+const extractCapacityForLoss = (text) => {
+  if (/^\s*(low|medium|high)\s*$/i.test(text)) {
+    return text.trim().toLowerCase();
+  }
+
+  const prefix = text.match(/(low|medium|high)\s+(capacity|capacity for loss|loss capacity|loss tolerance)/i);
+  if (prefix) {
+    return prefix[1].toLowerCase();
+  }
+
+  const suffix = text.match(/(capacity for loss|loss capacity|loss tolerance)[^a-z]*(low|medium|high)/i);
+  if (suffix) {
+    return suffix[2].toLowerCase();
+  }
+
+  return null;
+};
+
+const handleCapacitySelection = (session, capacity) => {
+  const profile = session.data.client_profile;
+  const responses = [];
+
+  profile.capacity_for_loss = capacity;
+  responses.push(`Thanks for sharing that your capacity for loss is ${capacity}.`);
+  session.context.onboardingStep = 5;
+
+  if (profile.risk_tolerance >= 5 && capacity === "low") {
+    session.context.requireRiskOverride = true;
+    const guardrails = Array.isArray(session.data.audit.guardrail_triggers)
+      ? session.data.audit.guardrail_triggers
+      : (session.data.audit.guardrail_triggers = []);
+    if (!guardrails.some((item) => item?.type === "risk_capacity_override" && !item?.confirmed_at)) {
+      guardrails.push({
+        type: "risk_capacity_override",
+        triggered_at: new Date().toISOString(),
+        confirmed_at: null
+      });
+    }
+    responses.push(
+      "Because you’ve chosen a higher risk tolerance with a low capacity for loss, please confirm you still wish to proceed."
+    );
+    return responses;
+  }
+
+  responses.push("Will you need to withdraw funds at specific times?");
+  return responses;
+};
+
+const handleRiskSelection = (session, risk, originalText) => {
+  const profile = session.data.client_profile;
+  const responses = [];
+
+  profile.risk_tolerance = risk;
+  responses.push(`Thanks, I’ll note a risk tolerance of ${risk} on the 1–7 scale.`);
+
+  if (profile.horizon_years && profile.horizon_years < 3 && risk >= 5) {
+    const guardrails = Array.isArray(session.data.audit.guardrail_triggers)
+      ? session.data.audit.guardrail_triggers
+      : (session.data.audit.guardrail_triggers = []);
+    if (!guardrails.some((item) => item?.type === "risk_horizon_warning")) {
+      guardrails.push({
+        type: "risk_horizon_warning",
+        triggered_at: new Date().toISOString(),
+        notes: "High risk with short horizon"
+      });
+    }
+    responses.push(
+      "⚠️ You’ve chosen a higher risk level with a shorter time horizon. I’ll flag this so your adviser can make sure it remains suitable."
+    );
+  }
+
+  const capacity = extractCapacityForLoss(originalText);
+  if (capacity && CAPACITY_FOR_LOSS_VALUES.includes(capacity)) {
+    const capacityResponses = handleCapacitySelection(session, capacity);
+    return responses.concat(capacityResponses);
+  }
+
+  session.context.onboardingStep = 4;
+  responses.push(
+    "If markets fall, how much loss could you afford without affecting your lifestyle? (low, medium, high)"
+  );
+  return responses;
+};
+
 const stageResponse = (session, stage, additionalMessages = []) => {
   if (session.stage !== stage) {
     setStage(session, stage);
@@ -172,7 +605,6 @@ const handleOnboarding = (session, text) => {
 
   const profile = session.data.client_profile;
   const step = session.context.onboardingStep ?? 0;
-  const responses = [];
 
   if (step === 0) {
     const choice = CLIENT_TYPES.find(
@@ -190,7 +622,8 @@ const handleOnboarding = (session, text) => {
     session.context.onboardingStep = 1;
     return {
       messages: [
-        "Thanks. What’s your main investment goal? (growth, income, preservation, impact, or other)"
+        `Great, I'll note you're investing in a ${choice} capacity.`,
+        "What’s your main investment goal? (growth, income, preservation, impact, or other)"
       ]
     };
   }
@@ -204,13 +637,14 @@ const handleOnboarding = (session, text) => {
     session.context.onboardingStep = 2;
     return {
       messages: [
+        `Thanks for sharing that your main goal is ${profile.objectives}.`,
         "How long do you expect to keep this money invested? Please provide the number of years."
       ]
     };
   }
 
   if (step === 2) {
-    const years = parseInteger(text);
+    const years = extractHorizonYears(text);
     if (!Number.isInteger(years) || years <= 0) {
       return {
         messages: [
@@ -220,17 +654,34 @@ const handleOnboarding = (session, text) => {
     }
 
     profile.horizon_years = years;
+    const messages = [
+      `That makes sense — planning for around ${years} years helps me map the right strategy horizon.`,
+      `So, your main goal is ${profile.objectives} with a ${years}-year horizon, correct?`
+    ];
+
+    const inferredRisk = extractRiskTolerance(text);
+    if (Number.isInteger(inferredRisk) && RISK_SCALE.includes(inferredRisk)) {
+      messages.push(...handleRiskSelection(session, inferredRisk, text));
+      return { messages };
+    }
+
     session.context.onboardingStep = 3;
-    return {
-      messages: [
-        "On a scale of 1 (very low) to 7 (very high), how comfortable are you with investment risk?"
-      ]
-    };
+    messages.push(
+      "On a scale of 1 (very low) to 7 (very high), how comfortable are you with investment risk?"
+    );
+    return { messages };
   }
 
   if (step === 3) {
-    const risk = parseInteger(text);
-    if (!RISK_SCALE.includes(risk)) {
+    let risk = extractRiskTolerance(text);
+    if (!Number.isInteger(risk) || !RISK_SCALE.includes(risk)) {
+      const parsed = parseInteger(text);
+      if (Number.isInteger(parsed) && RISK_SCALE.includes(parsed)) {
+        risk = parsed;
+      }
+    }
+
+    if (!Number.isInteger(risk) || !RISK_SCALE.includes(risk)) {
       return {
         messages: [
           "Please choose a risk level from 1 to 7, where 1 is very low risk and 7 is very high risk."
@@ -238,30 +689,13 @@ const handleOnboarding = (session, text) => {
       };
     }
 
-    profile.risk_tolerance = risk;
-    if (profile.horizon_years && profile.horizon_years < 3 && risk >= 5) {
-      session.data.audit.guardrail_triggers.push({
-        type: "risk_horizon_warning",
-        triggered_at: new Date().toISOString(),
-        notes: "High risk with short horizon"
-      });
-      responses.push(
-        "⚠️ You’ve chosen a high risk level with a short time horizon. I’ll highlight this for your adviser so they can discuss whether it remains suitable."
-      );
-    }
-
-    session.context.onboardingStep = 4;
-    responses.push(
-      "If markets fall, how much loss could you afford without affecting your lifestyle? (low, medium, high)"
-    );
+    const responses = handleRiskSelection(session, risk, text);
     return { messages: responses };
   }
 
   if (step === 4) {
-    const choice = CAPACITY_FOR_LOSS_VALUES.find(
-      (value) => normalise(value) === normalise(text)
-    );
-    if (!choice) {
+    const capacity = extractCapacityForLoss(text);
+    if (!capacity || !CAPACITY_FOR_LOSS_VALUES.includes(capacity)) {
       return {
         messages: [
           "Please let me know if your capacity for loss is low, medium, or high."
@@ -269,42 +703,41 @@ const handleOnboarding = (session, text) => {
       };
     }
 
-    profile.capacity_for_loss = choice;
-    session.context.onboardingStep = 5;
+    const responses = handleCapacitySelection(session, capacity);
+    return { messages: responses };
+  }
 
-    if (profile.risk_tolerance >= 5 && choice === "low") {
-      session.context.requireRiskOverride = true;
-      session.data.audit.guardrail_triggers.push({
-        type: "risk_capacity_override",
-        triggered_at: new Date().toISOString(),
-        confirmed_at: null
-      });
+  if (step === 5) {
+    const detail = text.trim();
+    if (!detail) {
       return {
         messages: [
-          "Because you’ve selected a high risk tolerance but a low capacity for loss, please explicitly confirm you wish to proceed with that combination."
+          "Even if you have no planned withdrawals, let me know so I can record it as part of suitability."
         ]
       };
     }
 
-    return {
-      messages: [
-        "Will you need to withdraw funds at specific times?"
-      ]
-    };
-  }
-
-  if (step === 5) {
-    profile.liquidity_needs = text.trim();
+    profile.liquidity_needs = detail;
     session.context.onboardingStep = 6;
     return {
       messages: [
+        "Thanks, I’ll note those liquidity needs for the record.",
         "Have you invested before? Please describe which instruments, how often, and for how long."
       ]
     };
   }
 
   if (step === 6) {
-    profile.knowledge_experience.summary = text.trim();
+    const experience = text.trim();
+    if (!experience) {
+      return {
+        messages: [
+          "Please share a short note on your investment experience so I can evidence suitability."
+        ]
+      };
+    }
+
+    profile.knowledge_experience.summary = experience;
     profile.knowledge_experience.instruments = splitList(text);
     profile.knowledge_experience.frequency = /monthly|quarterly|annual|weekly/i.test(text)
       ? (text.match(/(daily|weekly|monthly|quarterly|annual)/i)?.[1] ?? "")
@@ -313,6 +746,7 @@ const handleOnboarding = (session, text) => {
     session.context.onboardingStep = 7;
     return {
       messages: [
+        "Thanks for outlining your experience — that helps me tailor the conversation.",
         "Would you like to record income, assets, and liabilities for context?"
       ]
     };
@@ -330,6 +764,7 @@ const handleOnboarding = (session, text) => {
       session.context.onboardingStep = 9;
       session.context.consentStep = 0;
       return moveToStage(session, "SEGMENT_C_CONSENT", [
+        "No problem, I'll note that you prefer not to share detailed financial figures.",
         "We need your permission to record your answers for regulatory reporting.",
         "Do you consent to us processing your data for this advice session?"
       ]);
@@ -347,6 +782,7 @@ const handleOnboarding = (session, text) => {
     session.context.onboardingStep = 8;
     return {
       messages: [
+        "Thanks. Share whatever level of detail you’re comfortable with and I’ll note it for context.",
         "Please share any income, assets, and liabilities you’d like recorded (for example: Income £60k, Assets £250k, Liabilities £40k)."
       ]
     };
@@ -367,9 +803,10 @@ const handleOnboarding = (session, text) => {
     profile.financial_situation.assets = parseMoneyValue(details, "asset");
     profile.financial_situation.liabilities = parseMoneyValue(details, "liabilit");
     session.context.onboardingStep = 9;
-    session.context.consentStep = 0;
+   session.context.consentStep = 0;
     return moveToStage(session, "SEGMENT_C_CONSENT", [
-      "Thank you. We need your permission to record your answers for regulatory reporting.",
+      "Thank you for sharing that context — I’ll log it carefully for your adviser.",
+      "We need your permission to record your answers for regulatory reporting.",
       "Do you consent to us processing your data for this advice session?"
     ]);
   }
@@ -674,6 +1111,7 @@ const handleEducation = (session, text) => {
       session.context.education = education;
       return moveToStage(session, "SEGMENT_E_OPTIONS", [
         "Focus funds invest in companies already leading on sustainability factors, whereas Improvers target companies with credible plans to improve.",
+        "We're halfway through. Just a few more questions about your ESG preferences.",
         "Do you have sustainability preferences? Choose from: none, high_level, or detailed."
       ]);
     }
@@ -689,6 +1127,7 @@ const handleEducation = (session, text) => {
     education.summarised = true;
     session.context.education = education;
     return moveToStage(session, "SEGMENT_E_OPTIONS", [
+      "We're halfway through. Just a few more questions about your ESG preferences.",
       "No problem. Do you have sustainability preferences? Choose from: none, high_level, or detailed."
     ]);
   }
@@ -727,6 +1166,7 @@ const handleStructuredEducation = (session, content) => {
     );
   }
 
+  messages.push("We're halfway through. Just a few more questions about your ESG preferences.");
   messages.push(
     "Do you have sustainability preferences? Choose from: none, high_level, or detailed."
   );
@@ -840,7 +1280,7 @@ const handleOptions = (session, text) => {
     if (fossil && (fossil.threshold === null || Number.isNaN(fossil.threshold))) {
       return {
         messages: [
-          "For fossil fuels, please provide a numeric threshold (for example: Fossil fuels under 5%)."
+          "For fossil fuels, should I exclude all exposure, or set a revenue threshold such as under 10%? Please let me know the percentage you'd prefer."
         ]
       };
     }
@@ -1167,7 +1607,7 @@ const handleReport = (session) => {
   if (!validation.valid) {
     return {
       messages: [
-        "We’re missing some information before I can generate the report:",
+        "We're missing some information before I can generate the report:",
         ...validation.issues
       ]
     };
@@ -1204,6 +1644,12 @@ const handleComplete = () => ({
 
 export const handleClientTurn = (session, text) => {
   const trimmed = text.trim();
+  const detour = handleDetours(session, trimmed);
+  if (detour) {
+    saveSession(session);
+    return detour;
+  }
+
   const stageHandlers = {
     SEGMENT_A_EXPLANATION: handleExplanation,
     SEGMENT_B_ONBOARDING: handleOnboarding,

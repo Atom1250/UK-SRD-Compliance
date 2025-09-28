@@ -155,3 +155,76 @@ test("structured options require impact goals when Impact label is chosen", () =
     "should prompt for missing impact details"
   );
 });
+
+test("onboarding handles multi-field answers and confirms goals", () => {
+  sessionStore.resetSessions();
+  const session = sessionStore.createSession();
+  session.stage = "SEGMENT_B_ONBOARDING";
+  session.context.onboardingStep = 2;
+  session.data.client_profile.objectives = "growth";
+
+  const response = conversation.handleClientTurn(
+    session,
+    "Around 8 years and I'm medium risk"
+  );
+
+  assert.strictEqual(session.data.client_profile.horizon_years, 8);
+  assert.strictEqual(session.data.client_profile.risk_tolerance, 4);
+  assert.strictEqual(session.context.onboardingStep, 4);
+  assert.ok(
+    response.messages.some((message) => /8-year horizon/i.test(message)),
+    "should restate the goal and horizon for confirmation"
+  );
+  assert.ok(
+    response.messages.some((message) => /loss could you afford/i.test(message)),
+    "should proceed to ask about capacity for loss"
+  );
+});
+
+test("educational detours log requests and offer to resume", () => {
+  sessionStore.resetSessions();
+  const session = sessionStore.createSession();
+  session.stage = "SEGMENT_B_ONBOARDING";
+  session.context.onboardingStep = 2;
+
+  const response = conversation.handleClientTurn(
+    session,
+    "Tell me more about Impact investing"
+  );
+
+  assert.strictEqual(session.stage, "SEGMENT_B_ONBOARDING");
+  assert.ok(
+    response.messages.some((message) => /Impact investing/i.test(message)),
+    "should provide an Impact investing summary"
+  );
+  assert.ok(
+    response.messages.some((message) => /continue where we left off/i.test(message)),
+    "should offer to resume the main flow"
+  );
+  assert.ok(
+    session.data.educational_requests.some((entry) => /Impact investing/i.test(entry)),
+    "should log the educational request"
+  );
+});
+
+test("compliance clarifications log extra questions", () => {
+  sessionStore.resetSessions();
+  const session = sessionStore.createSession();
+  session.stage = "SEGMENT_B_ONBOARDING";
+  session.context.onboardingStep = 2;
+
+  const response = conversation.handleClientTurn(
+    session,
+    "Why do you need that?"
+  );
+
+  assert.strictEqual(session.stage, "SEGMENT_B_ONBOARDING");
+  assert.ok(
+    response.messages.some((message) => /suitable over time/i.test(message)),
+    "should explain the regulatory rationale for the question"
+  );
+  assert.ok(
+    session.data.extra_questions.some((entry) => /Why do you need that/i.test(entry)),
+    "should capture the clarification in extra_questions"
+  );
+});
