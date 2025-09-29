@@ -1,4 +1,5 @@
 const messagesList = document.getElementById("messages");
+const promptText = document.getElementById("current-prompt");
 const stageLabel = document.getElementById("stage");
 const sessionIdLabel = document.getElementById("session-id");
 const sessionDataBlock = document.getElementById("session-data");
@@ -10,6 +11,12 @@ const reportSection = document.getElementById("report-section");
 const reportPreview = document.getElementById("report-preview");
 const reportDownload = document.getElementById("report-download");
 const stageFormContainer = document.getElementById("stage-form");
+const educationPackToggle = document.getElementById("view-education-pack");
+const educationPackSection = document.getElementById("education-pack");
+const educationPackClose = document.getElementById("close-education-pack");
+const educationPackReturn = document.getElementById("return-to-questionnaire");
+
+const bodyElement = document.body;
 
 const CLIENT_TYPES = ["individual", "joint", "trust", "company"];
 const RISK_SCALE = [1, 2, 3, 4, 5, 6, 7];
@@ -32,6 +39,12 @@ const REPORTING_FREQUENCY_OPTIONS = [
   "annual"
 ];
 
+const setActivePrompt = (text) => {
+  if (!promptText) return;
+  const trimmed = String(text ?? "").trim();
+  promptText.textContent = trimmed || "Waiting for the assistant…";
+};
+
 const addMessage = (author, text) => {
   const item = document.createElement("li");
   item.dataset.author = author;
@@ -45,18 +58,20 @@ const addMessage = (author, text) => {
   item.appendChild(label);
   item.appendChild(body);
 
-  if (messagesList.firstChild) {
-    messagesList.insertBefore(item, messagesList.firstChild);
-  } else {
-    messagesList.appendChild(item);
-  }
+  messagesList.appendChild(item);
 
   if (typeof messagesList.scrollTo === "function") {
-    messagesList.scrollTo({ top: 0, behavior: "smooth" });
+    messagesList.scrollTo({
+      top: messagesList.scrollHeight,
+      behavior: "smooth"
+    });
   } else {
-    messagesList.scrollTop = 0;
+    messagesList.scrollTop = messagesList.scrollHeight;
   }
-  item.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  if (author === "assistant") {
+    setActivePrompt(text);
+  }
 };
 
 const setStage = (stage) => {
@@ -105,6 +120,80 @@ const api = async (path, options = {}) => {
 
 let currentSessionId = null;
 let currentSession = null;
+let educationPackAutoOpened = false;
+
+const openEducationPack = () => {
+  if (!educationPackSection) return;
+  educationPackSection.hidden = false;
+  if (bodyElement) {
+    bodyElement.classList.add("education-pack-open");
+  }
+  if (educationPackToggle) {
+    educationPackToggle.setAttribute("aria-expanded", "true");
+  }
+  const focusTarget = educationPackSection.querySelector(".education-pack__close") ?? educationPackSection;
+  focusTarget.focus();
+};
+
+const closeEducationPack = () => {
+  if (!educationPackSection) return;
+  const wasOpen = educationPackSection.hidden === false;
+  educationPackSection.hidden = true;
+  if (bodyElement) {
+    bodyElement.classList.remove("education-pack-open");
+  }
+  if (wasOpen && educationPackToggle) {
+    educationPackToggle.setAttribute("aria-expanded", "false");
+    if (!educationPackToggle.hidden) {
+      educationPackToggle.focus();
+    } else if (messageInput) {
+      messageInput.focus();
+    }
+  } else if (wasOpen && messageInput) {
+    messageInput.focus();
+  }
+};
+
+const updateEducationPackAvailability = (session) => {
+  const delivered =
+    session?.stage === "SEGMENT_D_EDUCATION" ||
+    session?.data?.sustainability_preferences?.educ_pack_sent === true;
+
+  if (educationPackToggle) {
+    educationPackToggle.hidden = !delivered;
+    if (delivered) {
+      const label =
+        session?.stage === "SEGMENT_D_EDUCATION"
+          ? "Open ESG education pack"
+          : "Review ESG education pack";
+      educationPackToggle.textContent = label;
+    } else {
+      educationPackToggle.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  if (!delivered) {
+    educationPackAutoOpened = false;
+    closeEducationPack();
+    return;
+  }
+
+  if (session?.stage === "SEGMENT_D_EDUCATION" && !educationPackAutoOpened) {
+    openEducationPack();
+    educationPackAutoOpened = true;
+  }
+};
+
+educationPackToggle?.addEventListener("click", openEducationPack);
+educationPackClose?.addEventListener("click", closeEducationPack);
+educationPackReturn?.addEventListener("click", closeEducationPack);
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && bodyElement?.classList.contains("education-pack-open")) {
+    event.preventDefault();
+    closeEducationPack();
+  }
+});
 
 const parseNumberField = (value) => {
   const trimmed = String(value ?? "").trim();
@@ -886,6 +975,7 @@ const setSessionData = (session) => {
   setStage(session.stage);
   updateReport(session);
   renderStageForm(session);
+  updateEducationPackAvailability(session);
 };
 
 const bootstrap = async () => {
