@@ -4,6 +4,14 @@ import assert from "node:assert";
 process.env.SESSION_DB_PATH = ":memory:";
 
 const sessionStore = await import("../server/state/sessionStore.js");
+const openAi = await import("../server/integrations/openAiClient.js");
+
+const unexpectedOpenAiCall = async () => {
+  throw new Error("OpenAI stub was not configured for this test");
+};
+
+openAi.setComplianceResponder(unexpectedOpenAiCall);
+
 const conversation = await import("../server/state/conversationEngine.js");
 const openAi = await import("../server/integrations/openAiClient.js");
 
