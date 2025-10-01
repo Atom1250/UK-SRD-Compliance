@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   CAPACITY_FOR_LOSS_VALUES,
   CLIENT_TYPES,
@@ -9,6 +10,7 @@ import {
   STAGE_PROMPTS
 } from "./constants.js";
 import {
+  appendEvent,
   applyDataPatch,
   saveSession,
   setStage
@@ -16,8 +18,13 @@ import {
 import { validateSessionData } from "./validateSession.js";
 import { generateReportArtifacts } from "../report/reportGenerator.js";
 import { storeReportArtifacts } from "../report/reportStore.js";
+import {
+  callComplianceResponder,
+  COMPLIANCE_SYSTEM_PROMPT
+} from "../integrations/openAiClient.js";
 
-const yesPatterns = /\b(yes|yep|i (consent|agree|understand|accept)|sure|ok(ay)?|ready)\b/i;
+const yesPatterns =
+  /\b(yes|yep|i (consent|agree|understand|accept)|sure|ok(ay)?|ready|understood)\b/i;
 const noPatterns = /\b(no|nope|not (yet|now)|decline|refuse)\b/i;
 
 const normalise = (value) => value.trim().toLowerCase();
@@ -192,6 +199,168 @@ const appendAdditionalNote = (session, note) => {
   if (!note) return;
   const existing = session.data.additional_notes ?? "";
   session.data.additional_notes = existing ? `${existing}\n${note}` : note;
+};
+
+const captureProgressSnapshot = (session) => {
+  const education = session.context.education ?? {};
+  const options = session.context.options ?? {};
+  return {
+    stage: session.stage,
+    onboardingStep:
+      session.context.onboardingStep ?? null,
+    consentStep: session.context.consentStep ?? null,
+    education: {
+      acknowledged: Boolean(education.acknowledged),
+      summaryOffered: Boolean(education.summaryOffered),
+      summarised: Boolean(education.summarised)
+    },
+    options: {
+      preferenceLevel: options.preferenceLevel ?? null,
+      step: options.step ?? null
+    },
+    confirmationAwaiting: Boolean(session.context.confirmationAwaiting),
+    reportReady: Boolean(session.context.reportReady)
+  };
+};
+
+const hasProgressed = (before, after) => {
+  if (!before) return true;
+  if (before.stage !== after.stage) return true;
+  if (before.onboardingStep !== after.onboardingStep) return true;
+  if (before.consentStep !== after.consentStep) return true;
+  if (before.confirmationAwaiting !== after.confirmationAwaiting) return true;
+  if (before.reportReady !== after.reportReady) return true;
+  if (
+    before.education.acknowledged !== after.education.acknowledged ||
+    before.education.summaryOffered !== after.education.summaryOffered ||
+    before.education.summarised !== after.education.summarised
+  ) {
+    return true;
+  }
+  if (
+    before.options.preferenceLevel !== after.options.preferenceLevel ||
+    before.options.step !== after.options.step
+  ) {
+    return true;
+  }
+  return false;
+};
+
+const summariseSessionForLLM = (session) => {
+  const profile = session.data?.client_profile ?? {};
+  const prefs = session.data?.sustainability_preferences ?? {};
+  const consent = session.data?.consent ?? {};
+  const summaryLines = [
+    `Current stage: ${session.stage}`,
+    `Client type: ${profile.client_type || "unspecified"}`,
+    `Objective: ${profile.objectives || "unspecified"}`,
+    `Horizon: ${profile.horizon_years ?? "—"} years`,
+    `Risk tolerance: ${profile.risk_tolerance ?? "—"}`,
+    `Capacity for loss: ${profile.capacity_for_loss || "unspecified"}`,
+    `Liquidity needs: ${profile.liquidity_needs || "unspecified"}`,
+    `Knowledge summary: ${profile.knowledge_experience?.summary || "—"}`,
+    `Financial context provided: ${profile.financial_situation?.provided ? "yes" : "no"}`,
+    `Preference level: ${prefs.preference_level || "none"}`,
+    `Label interests: ${(prefs.labels_interest ?? []).join(", ") || "None"}`,
+    `Impact goals: ${(prefs.impact_goals ?? []).join(", ") || "None"}`,
+    `Reporting preference: ${prefs.reporting_frequency_pref || "none"}`,
+    `Consent to data processing: ${
+      consent?.data_processing?.granted === true ? "granted" : "pending"
+    }`
+  ];
+  return `Session summary:\n${summaryLines.join("\n")}`;
+};
+
+const mapEventToChatMessage = (event) => {
+  if (!event) return null;
+  if (event.type === "message" && typeof event.content?.text === "string") {
+    if (event.author === "client") {
+      return { role: "user", content: event.content.text };
+    }
+    if (event.author === "assistant") {
+      return { role: "assistant", content: event.content.text };
+    }
+  }
+  if (event.author === "client" && event.type === "data_update") {
+    const payload = JSON.stringify(event.content ?? {});
+    return {
+      role: "user",
+      content: `Client submitted structured data: ${payload}`
+    };
+  }
+  return null;
+};
+
+const buildChatHistory = (session) =>
+  ensureArray(session.events)
+    .map((event) => mapEventToChatMessage(event))
+    .filter(Boolean);
+
+const persistComplianceData = (session, compliance = {}) => {
+  if (!compliance || typeof compliance !== "object") return;
+
+  ensureStringArray(compliance.educational_requests).forEach((entry) => {
+    appendSessionArrayEntry(session, "educational_requests", entry);
+  });
+  ensureStringArray(compliance.extra_questions).forEach((entry) => {
+    appendSessionArrayEntry(session, "extra_questions", entry);
+  });
+  ensureStringArray(compliance.notes).forEach((note) => {
+    appendAdditionalNote(session, note);
+  });
+};
+
+export const handleFreeFormQuery = async (
+  session,
+  text,
+  additionalMessages = []
+) => {
+  const trimmed = String(text ?? "").trim();
+  if (!trimmed) {
+    return {
+      messages: Array.isArray(additionalMessages) ? additionalMessages : []
+    };
+  }
+
+  const history = buildChatHistory(session);
+  const messages = [
+    {
+      role: "system",
+      content: `${COMPLIANCE_SYSTEM_PROMPT}\n\n${summariseSessionForLLM(session)}`
+    },
+    ...history,
+    { role: "user", content: trimmed }
+  ];
+
+  const aiPayload = await callComplianceResponder({ messages });
+  if (!aiPayload || typeof aiPayload.reply !== "string") {
+    throw new Error("Compliance assistant returned an unexpected payload");
+  }
+
+  const compliance = aiPayload.compliance ?? {};
+  persistComplianceData(session, compliance);
+
+  appendEvent(session, {
+    id: randomUUID(),
+    sessionId: session.id,
+    author: "assistant",
+    type: "message",
+    content: {
+      text: aiPayload.reply,
+      source: "openai",
+      compliance
+    },
+    createdAt: new Date().toISOString()
+  });
+
+  const tail = Array.isArray(additionalMessages)
+    ? additionalMessages.filter((item) => typeof item === "string" && item.trim())
+    : [];
+
+  return {
+    messages: [aiPayload.reply, ...tail],
+    compliance
+  };
 };
 
 const removeTrailingQuestionMark = (question = "") => {
@@ -1642,8 +1811,8 @@ const handleComplete = () => ({
   ]
 });
 
-export const handleClientTurn = (session, text) => {
-  const trimmed = text.trim();
+export const handleClientTurn = async (session, text) => {
+  const trimmed = String(text ?? "").trim();
   const detour = handleDetours(session, trimmed);
   if (detour) {
     saveSession(session);
@@ -1663,9 +1832,37 @@ export const handleClientTurn = (session, text) => {
   };
 
   const handler = stageHandlers[session.stage] ?? (() => ({ messages: [] }));
+  const before = captureProgressSnapshot(session);
   const response = handler(session, trimmed);
+  const after = captureProgressSnapshot(session);
+
+  const progressed = hasProgressed(before, after);
+  if (progressed || !trimmed) {
+    saveSession(session);
+    return response;
+  }
+
+  let finalResponse;
+  try {
+    finalResponse = await handleFreeFormQuery(
+      session,
+      trimmed,
+      response?.messages ?? []
+    );
+  } catch (error) {
+    const fallback = Array.isArray(response?.messages)
+      ? response.messages
+      : [];
+    finalResponse = {
+      messages: [
+        ...fallback,
+        "I’m unable to escalate this question to the compliance assistant right now. Please try again later or clarify your response."
+      ]
+    };
+  }
+
   saveSession(session);
-  return response;
+  return finalResponse;
 };
 
 export const handleAssistantMessage = (session, content) => {
@@ -1674,7 +1871,7 @@ export const handleAssistantMessage = (session, content) => {
   return { messages: [] };
 };
 
-export const handleEvent = (session, event) => {
+export const handleEvent = async (session, event) => {
   if (event.author === "client" && event.type === "message") {
     return handleClientTurn(session, event.content?.text ?? "");
   }
