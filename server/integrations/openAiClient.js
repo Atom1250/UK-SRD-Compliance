@@ -43,6 +43,7 @@ const complianceSchema = {
 let cachedClient = null;
 let OpenAIClass = null;
 let responder = null;
+let clientFactory = null;
 
 const STUB_FLAG_VALUES = new Set(["1", "true", "yes", "stub", "mock", "fake"]);
 
@@ -68,6 +69,26 @@ const shouldUseBuiltInStub = () => {
   return /^(stub|test|fake|placeholder)$/i.test(apiKey.trim());
 };
 
+const isProductionEnvironment = () => {
+  return (process.env.NODE_ENV ?? "").toLowerCase() === "production";
+};
+
+const shouldFallbackToStubOnUnauthorized = () => {
+  if (responder) {
+    return false;
+  }
+
+  if (!isProductionEnvironment()) {
+    return true;
+  }
+
+  const stubFlag = (process.env.OPENAI_STUB ?? process.env.OPENAI_MODE ?? "")
+    .toString()
+    .trim()
+    .toLowerCase();
+  return stubFlag && STUB_FLAG_VALUES.has(stubFlag);
+};
+
 const extractLastUserMessage = (messages = []) => {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const entry = messages[index];
@@ -78,11 +99,12 @@ const extractLastUserMessage = (messages = []) => {
   return null;
 };
 
-const builtInStubResponder = async ({ messages } = {}) => {
+const builtInStubResponder = async ({ messages, reason } = {}) => {
   const prompt = extractLastUserMessage(Array.isArray(messages) ? messages : []);
   const replyParts = [
     "I’m running in local test mode so I can’t reach the compliance assistant right now.",
     prompt ? `You asked: "${prompt}".` : null,
+    reason ? reason : null,
     "Provide a valid OPENAI_API_KEY (or unset OPENAI_STUB) to enable live answers."
   ].filter(Boolean);
 
@@ -90,8 +112,9 @@ const builtInStubResponder = async ({ messages } = {}) => {
     reply: replyParts.join(" "),
     compliance: {
       notes: [
-        "OpenAI compliance responder stub executed (no external API call)."
-      ]
+        "OpenAI compliance responder stub executed (no external API call).",
+        reason ? `Fallback reason: ${reason}` : null
+      ].filter(Boolean)
     }
   };
 };
@@ -114,6 +137,14 @@ const loadOpenAI = async () => {
 
 const getClient = async () => {
   if (cachedClient) {
+    return cachedClient;
+  }
+
+  if (clientFactory) {
+    cachedClient = await clientFactory();
+    if (!cachedClient) {
+      throw new Error("Mock OpenAI client factory did not return a client instance");
+    }
     return cachedClient;
   }
 
@@ -160,6 +191,13 @@ const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
     return JSON.parse(content);
   } catch (error) {
     if (error?.status === 401 || error?.statusCode === 401) {
+      if (shouldFallbackToStubOnUnauthorized()) {
+        return builtInStubResponder({
+          messages,
+          reason: "The last compliance request was rejected by OpenAI (401 unauthorized)."
+        });
+      }
+
       const err = new Error(
         "OpenAI rejected the compliance request. Check OPENAI_API_KEY or enable the stub via OPENAI_STUB=true."
       );
@@ -186,5 +224,17 @@ export const callComplianceResponder = async (payload) => {
       ? builtInStubResponder
       : defaultResponder;
   return handler(payload);
+};
+
+export const __testing = {
+  setClientFactory: (factory) => {
+    clientFactory = typeof factory === "function" ? factory : null;
+    cachedClient = null;
+  },
+  reset: () => {
+    cachedClient = null;
+    OpenAIClass = null;
+    clientFactory = null;
+  }
 };
 

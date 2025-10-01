@@ -5,11 +5,13 @@ process.env.SESSION_DB_PATH = ":memory:";
 
 const sessionStore = await import("../server/state/sessionStore.js");
 const openAi = await import("../server/integrations/openAiClient.js");
+const openAiTesting = openAi.__testing;
 
 const unexpectedOpenAiCall = async () => {
   throw new Error("OpenAI stub was not configured for this test");
 };
 
+openAiTesting?.reset?.();
 openAi.setComplianceResponder(unexpectedOpenAiCall);
 
 const conversation = await import("../server/state/conversationEngine.js");
@@ -354,6 +356,74 @@ test("free-form questions use the built-in stub when OPENAI_STUB is enabled", as
       process.env.OPENAI_API_KEY = originalApiKey;
     }
 
+    openAi.setComplianceResponder(unexpectedOpenAiCall);
+  }
+});
+
+test("free-form questions fall back to the stub when OpenAI rejects with 401", async () => {
+  sessionStore.resetSessions();
+  const session = sessionStore.createSession();
+
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalStubFlag = process.env.OPENAI_STUB;
+  const originalApiKey = process.env.OPENAI_API_KEY;
+
+  process.env.NODE_ENV = "development";
+  delete process.env.OPENAI_STUB;
+  process.env.OPENAI_API_KEY = "sk-invalid";
+
+  openAi.setComplianceResponder(null);
+  openAiTesting?.setClientFactory?.(async () => ({
+    chat: {
+      completions: {
+        create: async () => {
+          const unauthorized = new Error("Unauthorized");
+          unauthorized.status = 401;
+          throw unauthorized;
+        }
+      }
+    }
+  }));
+
+  try {
+    const result = await conversation.handleFreeFormQuery(
+      session,
+      "What should I know about the SDR labels?"
+    );
+
+    assert.ok(
+      result.messages[0].includes("test mode"),
+      "should surface the built-in stub reply"
+    );
+    const lastEvent = session.events.at(-1);
+    assert.strictEqual(lastEvent.content?.source, "openai");
+    assert.ok(
+      lastEvent.content?.compliance?.notes?.some((note) =>
+        /Fallback reason/i.test(note)
+      ),
+      "should record the unauthorized fallback reason"
+    );
+  } finally {
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+
+    if (originalStubFlag === undefined) {
+      delete process.env.OPENAI_STUB;
+    } else {
+      process.env.OPENAI_STUB = originalStubFlag;
+    }
+
+    if (originalApiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalApiKey;
+    }
+
+    openAiTesting?.setClientFactory?.(null);
+    openAiTesting?.reset?.();
     openAi.setComplianceResponder(unexpectedOpenAiCall);
   }
 });
