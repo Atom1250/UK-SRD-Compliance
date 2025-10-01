@@ -55,7 +55,12 @@
             placeholder="Share your reply"
             rows="3"
           ></textarea>
-          <button type="submit" id="send-button">Send</button>
+          <div class="composer__actions">
+            <button type="submit" id="send-button">Send</button>
+            <button type="button" id="ask-button" class="composer__ask">
+              Ask a question
+            </button>
+          </div>
           <p id="error" role="alert" class="composer__error" hidden></p>
         </form>
       </section>
