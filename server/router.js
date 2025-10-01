@@ -21,7 +21,10 @@ import {
   sendOptions,
   serveStaticFile
 } from "./httpUtils.js";
-import { handleEvent } from "./state/conversationEngine.js";
+import {
+  handleEvent,
+  handleFreeFormQuery
+} from "./state/conversationEngine.js";
 import { getReportArtifact } from "./report/reportStore.js";
 
 const API_PREFIX = "/api";
@@ -118,7 +121,7 @@ const handleAppendEvent = async (req, res, id) => {
   if (stageData) {
     applyDataPatch(session, stageData);
   }
-  const result = handleEvent(session, event);
+  const result = await handleEvent(session, event);
   saveSession(session);
 
   sendJSON(res, 201, {
@@ -126,6 +129,39 @@ const handleAppendEvent = async (req, res, id) => {
     session: toPublicSession(session),
     messages: result.messages
   });
+};
+
+const handleChat = async (req, res) => {
+  const body = await readBody(req);
+  const sessionId = body.session_id;
+  const message = typeof body.message === "string" ? body.message.trim() : "";
+
+  if (!sessionId || typeof sessionId !== "string") {
+    sendJSON(res, 400, { error: "session_id is required" });
+    return;
+  }
+
+  if (!message) {
+    sendJSON(res, 400, { error: "message is required" });
+    return;
+  }
+
+  const session = ensureSession(res, sessionId);
+  if (!session) return;
+
+  try {
+    const result = await handleFreeFormQuery(session, message);
+    saveSession(session);
+    sendJSON(res, 200, {
+      session: toPublicSession(session),
+      messages: result.messages
+    });
+  } catch (error) {
+    const status = error.status ?? 502;
+    sendJSON(res, status, {
+      error: error.message ?? "Unable to complete compliance chat"
+    });
+  }
 };
 
 const handleValidate = (res, id) => {
@@ -292,6 +328,11 @@ export const handleRequest = async (req, res) => {
 
     if (req.method === "POST" && apiPath === "/sessions") {
       handleCreateSession(req, res);
+      return;
+    }
+
+    if (req.method === "POST" && apiPath === "/chat") {
+      await handleChat(req, res);
       return;
     }
 
