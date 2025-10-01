@@ -7,6 +7,7 @@ const composer = document.getElementById("composer");
 const messageInput = document.getElementById("message-input");
 const errorBanner = document.getElementById("error");
 const sendButton = document.getElementById("send-button");
+const askButton = document.getElementById("ask-button");
 const reportSection = document.getElementById("report-section");
 const reportPreview = document.getElementById("report-preview");
 const reportDownload = document.getElementById("report-download");
@@ -99,6 +100,15 @@ const updateReport = (session) => {
 const showError = (message) => {
   errorBanner.textContent = message;
   errorBanner.hidden = !message;
+};
+
+const setComposerDisabled = (disabled) => {
+  if (sendButton) {
+    sendButton.disabled = disabled;
+  }
+  if (askButton) {
+    askButton.disabled = disabled;
+  }
 };
 
 const api = async (path, options = {}) => {
@@ -1008,7 +1018,7 @@ composer.addEventListener("submit", async (event) => {
   addMessage("client", text);
   messageInput.value = "";
   messageInput.focus();
-  sendButton.disabled = true;
+  setComposerDisabled(true);
 
   try {
     const eventResponse = await api(`/sessions/${currentSessionId}/events`, {
@@ -1027,8 +1037,52 @@ composer.addEventListener("submit", async (event) => {
   } catch (error) {
     showError(error.message);
   } finally {
-    sendButton.disabled = false;
+    setComposerDisabled(false);
   }
+});
+
+const submitFreeFormMessage = async () => {
+  showError("");
+
+  if (!currentSessionId) {
+    showError("Session not ready yet. Please refresh the page.");
+    return;
+  }
+
+  const text = messageInput.value.trim();
+  if (!text) {
+    return;
+  }
+
+  addMessage("client", text);
+  messageInput.value = "";
+  messageInput.focus();
+  setComposerDisabled(true);
+
+  try {
+    const chatResponse = await api(`/chat`, {
+      method: "POST",
+      body: {
+        session_id: currentSessionId,
+        message: text,
+        free_form: true
+      }
+    });
+
+    setSessionData(chatResponse.session);
+    (chatResponse.messages ?? []).forEach((message) =>
+      addMessage("assistant", message)
+    );
+  } catch (error) {
+    showError(error.message);
+  } finally {
+    setComposerDisabled(false);
+  }
+};
+
+askButton?.addEventListener("click", (event) => {
+  event.preventDefault();
+  submitFreeFormMessage();
 });
 
 bootstrap();

@@ -5,6 +5,13 @@ process.env.SESSION_DB_PATH = ":memory:";
 
 const sessionStore = await import("../server/state/sessionStore.js");
 const conversation = await import("../server/state/conversationEngine.js");
+const openAi = await import("../server/integrations/openAiClient.js");
+
+const unexpectedOpenAiCall = async () => {
+  throw new Error("OpenAI stub was not configured for this test");
+};
+
+openAi.setComplianceResponder(unexpectedOpenAiCall);
 
 const createEvent = (stage, content) => ({
   id: "event",
@@ -14,13 +21,13 @@ const createEvent = (stage, content) => ({
   content
 });
 
-test("structured onboarding persists suitability answers and advances to consent", () => {
+test("structured onboarding persists suitability answers and advances to consent", async () => {
   sessionStore.resetSessions();
   const session = sessionStore.createSession();
 
-  conversation.handleEvent(session, createEvent(session.stage, { ready: true }));
+  await conversation.handleEvent(session, createEvent(session.stage, { ready: true }));
 
-  const result = conversation.handleEvent(
+  const result = await conversation.handleEvent(
     session,
     createEvent(session.stage, {
       answers: {
@@ -63,11 +70,11 @@ test("structured onboarding persists suitability answers and advances to consent
   );
 });
 
-test("structured consent flow records timestamps and advances to education", () => {
+test("structured consent flow records timestamps and advances to education", async () => {
   sessionStore.resetSessions();
   const session = sessionStore.createSession();
-  conversation.handleEvent(session, createEvent(session.stage, { ready: true }));
-  conversation.handleEvent(
+  await conversation.handleEvent(session, createEvent(session.stage, { ready: true }));
+  await conversation.handleEvent(
     session,
     createEvent(session.stage, {
       answers: {
@@ -84,7 +91,7 @@ test("structured consent flow records timestamps and advances to education", () 
   );
 
   const before = Date.now();
-  conversation.handleEvent(
+  await conversation.handleEvent(
     session,
     createEvent(session.stage, {
       consent: {
@@ -101,11 +108,11 @@ test("structured consent flow records timestamps and advances to education", () 
   assert.ok(Date.parse(session.data.timestamps.consent_recorded_at) >= before);
 });
 
-test("structured options require impact goals when Impact label is chosen", () => {
+test("structured options require impact goals when Impact label is chosen", async () => {
   sessionStore.resetSessions();
   const session = sessionStore.createSession();
-  conversation.handleEvent(session, createEvent(session.stage, { ready: true }));
-  conversation.handleEvent(
+  await conversation.handleEvent(session, createEvent(session.stage, { ready: true }));
+  await conversation.handleEvent(
     session,
     createEvent(session.stage, {
       answers: {
@@ -120,7 +127,7 @@ test("structured options require impact goals when Impact label is chosen", () =
       }
     })
   );
-  conversation.handleEvent(
+  await conversation.handleEvent(
     session,
     createEvent(session.stage, {
       consent: {
@@ -130,9 +137,9 @@ test("structured options require impact goals when Impact label is chosen", () =
       }
     })
   );
-  conversation.handleEvent(session, createEvent(session.stage, { acknowledged: true }));
+  await conversation.handleEvent(session, createEvent(session.stage, { acknowledged: true }));
 
-  const result = conversation.handleEvent(
+  const result = await conversation.handleEvent(
     session,
     createEvent(session.stage, {
       preferences: {
@@ -156,14 +163,14 @@ test("structured options require impact goals when Impact label is chosen", () =
   );
 });
 
-test("onboarding handles multi-field answers and confirms goals", () => {
+test("onboarding handles multi-field answers and confirms goals", async () => {
   sessionStore.resetSessions();
   const session = sessionStore.createSession();
   session.stage = "SEGMENT_B_ONBOARDING";
   session.context.onboardingStep = 2;
   session.data.client_profile.objectives = "growth";
 
-  const response = conversation.handleClientTurn(
+  const response = await conversation.handleClientTurn(
     session,
     "Around 8 years and I'm medium risk"
   );
@@ -181,13 +188,13 @@ test("onboarding handles multi-field answers and confirms goals", () => {
   );
 });
 
-test("educational detours log requests and offer to resume", () => {
+test("educational detours log requests and offer to resume", async () => {
   sessionStore.resetSessions();
   const session = sessionStore.createSession();
   session.stage = "SEGMENT_B_ONBOARDING";
   session.context.onboardingStep = 2;
 
-  const response = conversation.handleClientTurn(
+  const response = await conversation.handleClientTurn(
     session,
     "Tell me more about Impact investing"
   );
@@ -207,13 +214,13 @@ test("educational detours log requests and offer to resume", () => {
   );
 });
 
-test("compliance clarifications log extra questions", () => {
+test("compliance clarifications log extra questions", async () => {
   sessionStore.resetSessions();
   const session = sessionStore.createSession();
   session.stage = "SEGMENT_B_ONBOARDING";
   session.context.onboardingStep = 2;
 
-  const response = conversation.handleClientTurn(
+  const response = await conversation.handleClientTurn(
     session,
     "Why do you need that?"
   );
@@ -227,4 +234,55 @@ test("compliance clarifications log extra questions", () => {
     session.data.extra_questions.some((entry) => /Why do you need that/i.test(entry)),
     "should capture the clarification in extra_questions"
   );
+});
+
+test("free-form fallback routes questions to the compliance assistant", async () => {
+  sessionStore.resetSessions();
+  const session = sessionStore.createSession();
+  session.stage = "SEGMENT_B_ONBOARDING";
+  session.context.onboardingStep = 0;
+
+  const stub = async () => ({
+    reply: "Here’s what to consider about fees and ESG reporting.",
+    compliance: {
+      educational_requests: ["Free-form question: fees and ESG reporting"],
+      notes: ["Logged compliance assistant free-form response."]
+    }
+  });
+
+  openAi.setComplianceResponder(stub);
+
+  try {
+    const result = await conversation.handleClientTurn(
+      session,
+      "I just want to check fees and reporting."
+    );
+
+    assert.ok(
+      result.messages[0].includes("fees and ESG reporting"),
+      "should return the OpenAI reply first"
+    );
+    assert.ok(
+      result.messages.some((message) => /individual, joint, trust, or company/i.test(message)),
+      "should retain the stage guidance after the assistant reply"
+    );
+
+    const lastEvent = session.events.at(-1);
+    assert.strictEqual(lastEvent.author, "assistant");
+    assert.strictEqual(lastEvent.content?.source, "openai");
+    assert.ok(lastEvent.content?.text.includes("fees and ESG reporting"));
+
+    assert.ok(
+      session.data.educational_requests.some((entry) =>
+        entry.includes("fees and ESG reporting")
+      )
+    );
+    assert.ok(
+      (session.data.additional_notes || "").includes(
+        "Logged compliance assistant free-form response."
+      )
+    );
+  } finally {
+    openAi.setComplianceResponder(unexpectedOpenAiCall);
+  }
 });
