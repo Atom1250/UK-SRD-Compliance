@@ -5,15 +5,7 @@ process.env.SESSION_DB_PATH = ":memory:";
 
 const sessionStore = await import("../server/state/sessionStore.js");
 const openAi = await import("../server/integrations/openAiClient.js");
-
-const unexpectedOpenAiCall = async () => {
-  throw new Error("OpenAI stub was not configured for this test");
-};
-
-openAi.setComplianceResponder(unexpectedOpenAiCall);
-
 const conversation = await import("../server/state/conversationEngine.js");
-const openAi = await import("../server/integrations/openAiClient.js");
 
 const unexpectedOpenAiCall = async () => {
   throw new Error("OpenAI stub was not configured for this test");
@@ -292,5 +284,62 @@ test("free-form fallback routes questions to the compliance assistant", async ()
     );
   } finally {
     openAi.setComplianceResponder(unexpectedOpenAiCall);
+  }
+});
+
+test("401 unauthorized falls back to the local stub in production", async () => {
+  sessionStore.resetSessions();
+  const session = sessionStore.createSession();
+  session.stage = "SEGMENT_B_ONBOARDING";
+  session.context.onboardingStep = 0;
+
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousStrict = process.env.OPENAI_STRICT;
+
+  process.env.NODE_ENV = "production";
+  delete process.env.OPENAI_STRICT;
+
+  const unauthorizedResponder = async () => {
+    const error = new Error("Unauthorized");
+    error.status = 401;
+    throw error;
+  };
+
+  openAi.setComplianceResponder(unauthorizedResponder);
+
+  try {
+    const result = await conversation.handleClientTurn(
+      session,
+      "Could you outline the sustainability reporting fees?"
+    );
+
+    assert.ok(
+      result.messages[0].includes("authorization error"),
+      "should respond with the stub message when OpenAI is unauthorized"
+    );
+    assert.ok(
+      session.data.educational_requests.some((entry) =>
+        entry.includes("sustainability reporting fees")
+      ),
+      "should log the free-form question as an educational request"
+    );
+    assert.ok(
+      (session.data.additional_notes || "").includes("authorization failure"),
+      "should record that the fallback stub handled the response"
+    );
+  } finally {
+    openAi.setComplianceResponder(unexpectedOpenAiCall);
+
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+
+    if (previousStrict === undefined) {
+      delete process.env.OPENAI_STRICT;
+    } else {
+      process.env.OPENAI_STRICT = previousStrict;
+    }
   }
 });
