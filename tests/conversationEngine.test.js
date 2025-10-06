@@ -15,7 +15,6 @@ openAiTesting?.reset?.();
 openAi.setComplianceResponder(unexpectedOpenAiCall);
 
 const conversation = await import("../server/state/conversationEngine.js");
-const openAi = await import("../server/integrations/openAiClient.js");
 
 const unexpectedOpenAiCall = async () => {
   throw new Error("OpenAI stub was not configured for this test");
