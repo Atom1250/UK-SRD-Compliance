@@ -5,6 +5,15 @@ process.env.SESSION_DB_PATH = ":memory:";
 
 const sessionStore = await import("../server/state/sessionStore.js");
 const openAi = await import("../server/integrations/openAiClient.js");
+const openAiTesting = openAi.__testing;
+
+const unexpectedOpenAiCall = async () => {
+  throw new Error("OpenAI stub was not configured for this test");
+};
+
+openAiTesting?.reset?.();
+openAi.setComplianceResponder(unexpectedOpenAiCall);
+
 const conversation = await import("../server/state/conversationEngine.js");
 
 const unexpectedOpenAiCall = async () => {
@@ -163,6 +172,32 @@ test("structured options require impact goals when Impact label is chosen", asyn
   );
 });
 
+test("education acknowledgement accepts an 'Understood' confirmation", async () => {
+  sessionStore.resetSessions();
+  const session = sessionStore.createSession();
+  session.stage = "SEGMENT_D_EDUCATION";
+  session.context.education = {
+    acknowledged: false,
+    summaryOffered: false,
+    summarised: false
+  };
+
+  const response = await conversation.handleClientTurn(session, "Understood");
+
+  assert.ok(
+    session.context.education.acknowledged,
+    "education acknowledgement should be recorded"
+  );
+  assert.ok(
+    session.data.timestamps.education_completed_at,
+    "education completion timestamp should be set"
+  );
+  assert.ok(
+    response.messages.some((message) => /summaris/i.test(message)),
+    "should offer the education summary after acknowledgement"
+  );
+});
+
 test("onboarding handles multi-field answers and confirms goals", async () => {
   sessionStore.resetSessions();
   const session = sessionStore.createSession();
@@ -287,59 +322,115 @@ test("free-form fallback routes questions to the compliance assistant", async ()
   }
 });
 
-test("401 unauthorized falls back to the local stub in production", async () => {
+test("free-form questions use the built-in stub when OPENAI_STUB is enabled", async () => {
   sessionStore.resetSessions();
   const session = sessionStore.createSession();
-  session.stage = "SEGMENT_B_ONBOARDING";
-  session.context.onboardingStep = 0;
 
-  const previousNodeEnv = process.env.NODE_ENV;
-  const previousStrict = process.env.OPENAI_STRICT;
+  const originalStubFlag = process.env.OPENAI_STUB;
+  const originalApiKey = process.env.OPENAI_API_KEY;
 
-  process.env.NODE_ENV = "production";
-  delete process.env.OPENAI_STRICT;
-
-  const unauthorizedResponder = async () => {
-    const error = new Error("Unauthorized");
-    error.status = 401;
-    throw error;
-  };
-
-  openAi.setComplianceResponder(unauthorizedResponder);
+  process.env.OPENAI_STUB = "true";
+  delete process.env.OPENAI_API_KEY;
+  openAi.setComplianceResponder(null);
 
   try {
-    const result = await conversation.handleClientTurn(
+    const result = await conversation.handleFreeFormQuery(
       session,
-      "Could you outline the sustainability reporting fees?"
+      "Can you recap the SDR labels?"
     );
 
     assert.ok(
-      result.messages[0].includes("authorization error"),
-      "should respond with the stub message when OpenAI is unauthorized"
+      result.messages[0].includes("test mode"),
+      "should return the stubbed message"
     );
+    const lastEvent = session.events.at(-1);
+    assert.strictEqual(lastEvent.content?.source, "openai");
     assert.ok(
-      session.data.educational_requests.some((entry) =>
-        entry.includes("sustainability reporting fees")
-      ),
-      "should log the free-form question as an educational request"
-    );
-    assert.ok(
-      (session.data.additional_notes || "").includes("authorization failure"),
-      "should record that the fallback stub handled the response"
+      (session.data.additional_notes || "").includes("stub executed"),
+      "should record that the stub handled the response"
     );
   } finally {
+    if (originalStubFlag === undefined) {
+      delete process.env.OPENAI_STUB;
+    } else {
+      process.env.OPENAI_STUB = originalStubFlag;
+    }
+
+    if (originalApiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalApiKey;
+    }
+
     openAi.setComplianceResponder(unexpectedOpenAiCall);
-
-    if (previousNodeEnv === undefined) {
-      delete process.env.NODE_ENV;
-    } else {
-      process.env.NODE_ENV = previousNodeEnv;
-    }
-
-    if (previousStrict === undefined) {
-      delete process.env.OPENAI_STRICT;
-    } else {
-      process.env.OPENAI_STRICT = previousStrict;
-    }
   }
 });
+
+test("free-form questions fall back to the stub when OpenAI rejects with 401", async () => {
+  sessionStore.resetSessions();
+  const session = sessionStore.createSession();
+
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalStubFlag = process.env.OPENAI_STUB;
+  const originalApiKey = process.env.OPENAI_API_KEY;
+
+  process.env.NODE_ENV = "development";
+  delete process.env.OPENAI_STUB;
+  process.env.OPENAI_API_KEY = "sk-invalid";
+
+  openAi.setComplianceResponder(null);
+  openAiTesting?.setClientFactory?.(async () => ({
+    chat: {
+      completions: {
+        create: async () => {
+          const unauthorized = new Error("Unauthorized");
+          unauthorized.status = 401;
+          throw unauthorized;
+        }
+      }
+    }
+  }));
+
+  try {
+    const result = await conversation.handleFreeFormQuery(
+      session,
+      "What should I know about the SDR labels?"
+    );
+
+    assert.ok(
+      result.messages[0].includes("test mode"),
+      "should surface the built-in stub reply"
+    );
+    const lastEvent = session.events.at(-1);
+    assert.strictEqual(lastEvent.content?.source, "openai");
+    assert.ok(
+      lastEvent.content?.compliance?.notes?.some((note) =>
+        /Fallback reason/i.test(note)
+      ),
+      "should record the unauthorized fallback reason"
+    );
+  } finally {
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+
+    if (originalStubFlag === undefined) {
+      delete process.env.OPENAI_STUB;
+    } else {
+      process.env.OPENAI_STUB = originalStubFlag;
+    }
+
+    if (originalApiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalApiKey;
+    }
+
+    openAiTesting?.setClientFactory?.(null);
+    openAiTesting?.reset?.();
+    openAi.setComplianceResponder(unexpectedOpenAiCall);
+  }
+});
+

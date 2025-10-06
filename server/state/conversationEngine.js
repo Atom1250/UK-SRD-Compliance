@@ -23,7 +23,8 @@ import {
   COMPLIANCE_SYSTEM_PROMPT
 } from "../integrations/openAiClient.js";
 
-const yesPatterns = /\b(yes|yep|i (consent|agree|understand|accept)|sure|ok(ay)?|ready)\b/i;
+const yesPatterns =
+  /\b(yes|yep|i (consent|agree|understand|accept)|sure|ok(ay)?|ready|understood)\b/i;
 const noPatterns = /\b(no|nope|not (yet|now)|decline|refuse)\b/i;
 
 const normalise = (value) => value.trim().toLowerCase();
