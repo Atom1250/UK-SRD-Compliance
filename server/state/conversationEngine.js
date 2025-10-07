@@ -16,6 +16,10 @@ import {
   setStage
 } from "./sessionStore.js";
 import { validateSessionData } from "./validateSession.js";
+import {
+  AUTHORIZED_INVESTMENTS,
+  MARKET_ALTERNATIVES
+} from "./investmentUniverse.js";
 import { generateReportArtifacts } from "../report/reportGenerator.js";
 import { storeReportArtifacts } from "../report/reportStore.js";
 import {
@@ -199,6 +203,136 @@ const appendAdditionalNote = (session, note) => {
   const existing = session.data.additional_notes ?? "";
   session.data.additional_notes = existing ? `${existing}\n${note}` : note;
 };
+
+const appendInvestmentResearchLog = (session, entry) => {
+  if (!entry) return;
+  if (!Array.isArray(session.data.investment_research)) {
+    session.data.investment_research = [];
+  }
+  session.data.investment_research.push(entry);
+};
+
+const INVESTMENT_EXPLORER_PATTERNS = [
+  /\b(show|list|suggest|recommend)\b.*\b(funds?|portfolios?|securities)\b/i,
+  /\b(funds?|portfolios?)\b.*\b(options?|ideas|matches)\b/i,
+  /\b(sustainable|esg|impact)\b.*\b(funds?|portfolios?)\b/i,
+  /\binvestment options?\b/i,
+  /\bmarket scan\b.*\b(funds?|portfolios?|securities)\b/i
+];
+
+const pickExactMatches = (preferred, available) => {
+  const preferredSet = new Set(
+    ensureArray(preferred).map((value) => normalise(value))
+  );
+  if (preferredSet.size === 0) {
+    return [];
+  }
+  return ensureArray(available).filter((item) =>
+    preferredSet.has(normalise(item))
+  );
+};
+
+const evaluateInvestmentMatch = (session, investment) => {
+  const profile = session.data?.client_profile ?? {};
+  const prefs = session.data?.sustainability_preferences ?? {};
+  let score = 0;
+  const reasons = [];
+
+  const objectives = ensureArray(investment.objectives);
+  if (
+    profile.objectives &&
+    objectives.some((objective) => normalise(objective) === normalise(profile.objectives))
+  ) {
+    score += 2;
+    reasons.push(`Supports your ${profile.objectives} objective`);
+  }
+
+  if (
+    Number.isInteger(profile.risk_tolerance) &&
+    Array.isArray(investment.risk_band) &&
+    investment.risk_band.length === 2
+  ) {
+    const [minRisk, maxRisk] = investment.risk_band;
+    if (profile.risk_tolerance < minRisk || profile.risk_tolerance > maxRisk) {
+      return null;
+    }
+    score += 1;
+    reasons.push(
+      `Aligned to risk level ${profile.risk_tolerance} within range ${minRisk}-${maxRisk}`
+    );
+  }
+
+  if (
+    Number.isInteger(profile.horizon_years) &&
+    Number.isFinite(investment.min_horizon_years)
+  ) {
+    if (profile.horizon_years < investment.min_horizon_years) {
+      return null;
+    }
+    score += 0.5;
+    reasons.push(`Designed for ${investment.min_horizon_years}+ year horizons`);
+  }
+
+  const preferenceLevel = prefs.preference_level ?? "none";
+  if (preferenceLevel !== "none") {
+    const supportedLevels = ensureArray(investment.preference_levels);
+    if (
+      supportedLevels.length > 0 &&
+      !supportedLevels.some((level) => normalise(level) === normalise(preferenceLevel))
+    ) {
+      return null;
+    }
+    if (supportedLevels.length > 0) {
+      score += 0.5;
+      reasons.push(
+        `Suitable for ${preferenceLevel.replace(/_/g, " ")} preference profiles`
+      );
+    }
+  }
+
+  const matchedLabels = pickExactMatches(prefs.labels_interest, investment.labels);
+  if (matchedLabels.length > 0) {
+    score += 1.5;
+    reasons.push(`Carries ${matchedLabels.join(", ")} label alignment`);
+  }
+
+  const matchedThemes = pickExactMatches(prefs.themes, investment.themes);
+  if (matchedThemes.length > 0) {
+    score += 0.5;
+    reasons.push(`Covers ${matchedThemes.join(", ")} themes`);
+  }
+
+  if (score === 0) {
+    return null;
+  }
+
+  return { investment, score, reasons };
+};
+
+const rankInvestmentMatches = (session, universe, limit = 3) =>
+  ensureArray(universe)
+    .map((item) => evaluateInvestmentMatch(session, item))
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+const summariseInvestmentMatch = ({ investment, reasons }) => {
+  const reasonText = reasons.length
+    ? `${reasons.join("; ")}.`
+    : "Matches the captured objectives and sustainability profile.";
+  return `• ${investment.name} (${investment.type}, ${investment.provider}, ${investment.charges}) – ${reasonText}`;
+};
+
+const hasPreferenceProfile = (session) => {
+  const prefs = session.data?.sustainability_preferences ?? {};
+  if (!prefs || prefs.preference_level === "none") {
+    return false;
+  }
+  return ensureArray(prefs.labels_interest).length > 0;
+};
+
+const shouldTriggerInvestmentExplorer = (text) =>
+  INVESTMENT_EXPLORER_PATTERNS.some((pattern) => pattern.test(text));
 
 const captureProgressSnapshot = (session) => {
   const education = session.context.education ?? {};
@@ -476,8 +610,79 @@ const logExtraQuestion = (session, text) => {
   appendAdditionalNote(session, `Explained compliance rationale for "${text.trim()}".`);
 };
 
+const handleInvestmentExplorer = (session, text) => {
+  if (!shouldTriggerInvestmentExplorer(text)) {
+    return null;
+  }
+
+  if (!hasPreferenceProfile(session)) {
+    const resumePrompt = buildResumePrompt(session);
+    return {
+      messages: [
+        "Once we've captured your sustainability preferences I can search our authorised investment list for matches.",
+        resumePrompt
+      ]
+    };
+  }
+
+  const authorisedMatches = rankInvestmentMatches(session, AUTHORIZED_INVESTMENTS);
+  const alternativeMatches = rankInvestmentMatches(session, MARKET_ALTERNATIVES);
+
+  if (authorisedMatches.length === 0 && alternativeMatches.length === 0) {
+    const resumePrompt = buildResumePrompt(session);
+    appendInvestmentResearchLog(session, {
+      at: new Date().toISOString(),
+      query: text,
+      authorised_matches: [],
+      alternative_matches: []
+    });
+    appendAdditionalNote(
+      session,
+      `Investment explorer run for "${text}" but no aligned investments were found.`
+    );
+    return {
+      messages: [
+        "I couldn't find any close matches yet. I'll flag this for an adviser to review manually.",
+        resumePrompt
+      ]
+    };
+  }
+
+  appendInvestmentResearchLog(session, {
+    at: new Date().toISOString(),
+    query: text,
+    authorised_matches: authorisedMatches.map((match) => match.investment.id),
+    alternative_matches: alternativeMatches.map((match) => match.investment.id)
+  });
+  appendAdditionalNote(
+    session,
+    `Investment explorer run for "${text}" with ${authorisedMatches.length} authorised match(es).`
+  );
+
+  const authorisedSummary = authorisedMatches.length
+    ? authorisedMatches.map(summariseInvestmentMatch).join("\n")
+    : "No on-panel investments matched these preferences. I'll flag this for adviser review.";
+  const alternativeSummary = alternativeMatches.length
+    ? alternativeMatches.map(summariseInvestmentMatch).join("\n")
+    : "The wider market scan did not surface close alternatives right now.";
+  const resumePrompt = buildResumePrompt(session);
+
+  return {
+    messages: [
+      `Here are on-panel investments that align with your preferences (adviser sign-off still required):\n${authorisedSummary}`,
+      `Market scan alternatives meeting similar criteria (not currently on our panel):\n${alternativeSummary}`,
+      `Any selection will need an adviser recommendation before you invest. ${resumePrompt}`
+    ]
+  };
+};
+
 const handleDetours = (session, text) => {
   if (!text) return null;
+
+  const investmentResult = handleInvestmentExplorer(session, text);
+  if (investmentResult) {
+    return investmentResult;
+  }
 
   const module = findEducationModule(text);
   if (module) {
