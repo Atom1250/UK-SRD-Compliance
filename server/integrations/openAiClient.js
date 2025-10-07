@@ -248,7 +248,15 @@ const fallbackComplianceStub = async ({ messages = [] }, { status } = {}) => {
   return { reply, compliance };
 };
 
-export const shouldFallbackToStubOnUnauthorized = (error) => {
+const parseStrictFlag = (value) => {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+};
+
+const truthyStrictValues = new Set(["1", "true", "yes", "on"]);
+
+const shouldFallbackToStubOnUnauthorized = (error, env = process.env) => {
   const status = getErrorStatusCode(error);
   if (status !== 401) {
     return false;
