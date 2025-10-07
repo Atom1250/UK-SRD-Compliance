@@ -256,17 +256,16 @@ const parseStrictFlag = (value) => {
 
 const truthyStrictValues = new Set(["1", "true", "yes", "on"]);
 
-const shouldFallbackToStubOnUnauthorized = (error, env = process.env) => {
+export function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
   const status = getErrorStatusCode(error);
   if (status !== 401) {
     return false;
   }
+
   const strict = parseStrictFlag(env.OPENAI_STRICT);
   const strictEnabled = truthyStrictValues.has(strict);
   return !strictEnabled;
-};
-
-export { shouldFallbackToStubOnUnauthorized };
+}
 
 const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
   const client = await getClient();
@@ -335,12 +334,17 @@ export const setComplianceResponder = (fn) => {
 };
 
 export const callComplianceResponder = async (payload) => {
-  const handler = responder
-    ? responder
-    : shouldUseBuiltInStub()
-      ? builtInStubResponder
-      : defaultResponder;
-  return handler(payload);
+  const handler = responder ?? defaultResponder;
+
+  try {
+    return await handler(payload);
+  } catch (error) {
+    if (shouldFallbackToStubOnUnauthorized(error)) {
+      const status = getErrorStatusCode(error);
+      return fallbackComplianceStub(payload, { status });
+    }
+    throw error;
+  }
 };
 
 export const __testing = {
