@@ -335,16 +335,23 @@ export const setComplianceResponder = (fn) => {
 };
 
 export const callComplianceResponder = async (payload) => {
-  const handler = responder ?? defaultResponder;
+  const handler = responder
+    ? responder
+    : shouldUseBuiltInStub()
+      ? builtInStubResponder
+      : defaultResponder;
+  return handler(payload);
+};
 
-  try {
-    return await handler(payload);
-  } catch (error) {
-    if (shouldFallbackToStubOnUnauthorized(error)) {
-      const status = getErrorStatusCode(error);
-      return fallbackComplianceStub(payload, { status });
-    }
-    throw error;
+export const __testing = {
+  setClientFactory: (factory) => {
+    clientFactory = typeof factory === "function" ? factory : null;
+    cachedClient = null;
+  },
+  reset: () => {
+    cachedClient = null;
+    OpenAIClass = null;
+    clientFactory = null;
   }
 };
 
