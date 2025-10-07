@@ -261,13 +261,12 @@ const shouldFallbackToStubOnUnauthorized = (error, env = process.env) => {
   if (status !== 401) {
     return false;
   }
-
-  const strict = String(process.env.OPENAI_STRICT ?? "")
-    .trim()
-    .toLowerCase();
-  const strictEnabled = ["1", "true", "yes", "on"].includes(strict);
+  const strict = parseStrictFlag(env.OPENAI_STRICT);
+  const strictEnabled = truthyStrictValues.has(strict);
   return !strictEnabled;
 };
+
+export { shouldFallbackToStubOnUnauthorized };
 
 const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
   const client = await getClient();
@@ -346,18 +345,6 @@ export const callComplianceResponder = async (payload) => {
       return fallbackComplianceStub(payload, { status });
     }
     throw error;
-  }
-};
-
-export const __testing = {
-  setClientFactory: (factory) => {
-    clientFactory = typeof factory === "function" ? factory : null;
-    cachedClient = null;
-  },
-  reset: () => {
-    cachedClient = null;
-    OpenAIClass = null;
-    clientFactory = null;
   }
 };
 
