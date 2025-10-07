@@ -263,6 +263,28 @@ export const shouldFallbackToStubOnUnauthorized = (error) => {
 
 const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
   const client = await getClient();
+  const completion = await client.chat.completions.create({
+    model,
+    messages,
+    response_format: { type: "json_schema", json_schema: complianceSchema },
+    temperature: 0.2
+  });
+
+export const shouldFallbackToStubOnUnauthorized = (error) => {
+  const status = getErrorStatusCode(error);
+  if (status !== 401) {
+    return false;
+  }
+
+  const strict = String(process.env.OPENAI_STRICT ?? "")
+    .trim()
+    .toLowerCase();
+  const strictEnabled = ["1", "true", "yes", "on"].includes(strict);
+  return !strictEnabled;
+};
+
+const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
+  const client = await getClient();
   try {
     const completion = await client.chat.completions.create({
       model,
@@ -306,12 +328,17 @@ export const setComplianceResponder = (fn) => {
 };
 
 export const callComplianceResponder = async (payload) => {
-  const handler = responder
-    ? responder
-    : shouldUseBuiltInStub()
-      ? builtInStubResponder
-      : defaultResponder;
-  return handler(payload);
+  const handler = responder ?? defaultResponder;
+
+  try {
+    return await handler(payload);
+  } catch (error) {
+    if (shouldFallbackToStubOnUnauthorized(error)) {
+      const status = getErrorStatusCode(error);
+      return fallbackComplianceStub(payload, { status });
+    }
+    throw error;
+  }
 };
 
 export const __testing = {

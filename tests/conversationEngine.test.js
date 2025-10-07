@@ -5,15 +5,6 @@ process.env.SESSION_DB_PATH = ":memory:";
 
 const sessionStore = await import("../server/state/sessionStore.js");
 const openAi = await import("../server/integrations/openAiClient.js");
-const openAiTesting = openAi.__testing;
-
-const unexpectedOpenAiCall = async () => {
-  throw new Error("OpenAI stub was not configured for this test");
-};
-
-openAiTesting?.reset?.();
-openAi.setComplianceResponder(unexpectedOpenAiCall);
-
 const conversation = await import("../server/state/conversationEngine.js");
 
 const unexpectedOpenAiCall = async () => {
@@ -322,115 +313,113 @@ test("free-form fallback routes questions to the compliance assistant", async ()
   }
 });
 
-test("free-form questions use the built-in stub when OPENAI_STUB is enabled", async () => {
+test("investment explorer surfaces authorised funds and market scan alternatives", async () => {
   sessionStore.resetSessions();
   const session = sessionStore.createSession();
+  session.stage = "SEGMENT_E_OPTIONS";
+  session.context.options.preferenceLevel = "detailed";
+  session.context.options.step = 4;
 
-  const originalStubFlag = process.env.OPENAI_STUB;
-  const originalApiKey = process.env.OPENAI_API_KEY;
+  session.data.client_profile.objectives = "growth";
+  session.data.client_profile.risk_tolerance = 5;
+  session.data.client_profile.horizon_years = 8;
 
-  process.env.OPENAI_STUB = "true";
-  delete process.env.OPENAI_API_KEY;
-  openAi.setComplianceResponder(null);
+  session.data.sustainability_preferences = {
+    preference_level: "detailed",
+    labels_interest: ["Sustainability: Impact"],
+    themes: ["Climate"],
+    exclusions: [],
+    impact_goals: ["Energy transition"],
+    engagement_importance: "High",
+    reporting_frequency_pref: "quarterly",
+    tradeoff_tolerance: "Moderate",
+    educ_pack_sent: true
+  };
 
-  try {
-    const result = await conversation.handleFreeFormQuery(
-      session,
-      "Can you recap the SDR labels?"
-    );
+  const response = await conversation.handleClientTurn(
+    session,
+    "Can you suggest some sustainable fund options?"
+  );
 
-    assert.ok(
-      result.messages[0].includes("test mode"),
-      "should return the stubbed message"
-    );
-    const lastEvent = session.events.at(-1);
-    assert.strictEqual(lastEvent.content?.source, "openai");
-    assert.ok(
-      (session.data.additional_notes || "").includes("stub executed"),
-      "should record that the stub handled the response"
-    );
-  } finally {
-    if (originalStubFlag === undefined) {
-      delete process.env.OPENAI_STUB;
-    } else {
-      process.env.OPENAI_STUB = originalStubFlag;
-    }
+  assert.ok(
+    response.messages[0].includes("on-panel investments"),
+    "should list authorised investments first"
+  );
+  assert.ok(
+    response.messages[1].includes("Market scan alternatives"),
+    "should include a wider market scan summary"
+  );
+  assert.ok(
+    response.messages[2].includes("adviser recommendation"),
+    "should remind the client that an adviser must approve any selection"
+  );
 
-    if (originalApiKey === undefined) {
-      delete process.env.OPENAI_API_KEY;
-    } else {
-      process.env.OPENAI_API_KEY = originalApiKey;
-    }
-
-    openAi.setComplianceResponder(unexpectedOpenAiCall);
-  }
+  assert.ok(Array.isArray(session.data.investment_research));
+  assert.strictEqual(session.data.investment_research.length, 1);
+  const log = session.data.investment_research[0];
+  assert.ok(
+    log.authorised_matches.includes("aurora_green_growth"),
+    "should capture authorised matches in the research log"
+  );
+  assert.ok(
+    log.alternative_matches.includes("solstice_global_impact"),
+    "should capture market alternatives in the research log"
+  );
 });
 
-test("free-form questions fall back to the stub when OpenAI rejects with 401", async () => {
+test("401 unauthorized falls back to the local stub in production", async () => {
   sessionStore.resetSessions();
   const session = sessionStore.createSession();
+  session.stage = "SEGMENT_B_ONBOARDING";
+  session.context.onboardingStep = 0;
 
-  const originalNodeEnv = process.env.NODE_ENV;
-  const originalStubFlag = process.env.OPENAI_STUB;
-  const originalApiKey = process.env.OPENAI_API_KEY;
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousStrict = process.env.OPENAI_STRICT;
 
-  process.env.NODE_ENV = "development";
-  delete process.env.OPENAI_STUB;
-  process.env.OPENAI_API_KEY = "sk-invalid";
+  process.env.NODE_ENV = "production";
+  delete process.env.OPENAI_STRICT;
 
-  openAi.setComplianceResponder(null);
-  openAiTesting?.setClientFactory?.(async () => ({
-    chat: {
-      completions: {
-        create: async () => {
-          const unauthorized = new Error("Unauthorized");
-          unauthorized.status = 401;
-          throw unauthorized;
-        }
-      }
-    }
-  }));
+  const unauthorizedResponder = async () => {
+    const error = new Error("Unauthorized");
+    error.status = 401;
+    throw error;
+  };
+
+  openAi.setComplianceResponder(unauthorizedResponder);
 
   try {
-    const result = await conversation.handleFreeFormQuery(
+    const result = await conversation.handleClientTurn(
       session,
-      "What should I know about the SDR labels?"
+      "Could you outline the sustainability reporting fees?"
     );
 
     assert.ok(
-      result.messages[0].includes("test mode"),
-      "should surface the built-in stub reply"
+      result.messages[0].includes("authorization error"),
+      "should respond with the stub message when OpenAI is unauthorized"
     );
-    const lastEvent = session.events.at(-1);
-    assert.strictEqual(lastEvent.content?.source, "openai");
     assert.ok(
-      lastEvent.content?.compliance?.notes?.some((note) =>
-        /Fallback reason/i.test(note)
+      session.data.educational_requests.some((entry) =>
+        entry.includes("sustainability reporting fees")
       ),
-      "should record the unauthorized fallback reason"
+      "should log the free-form question as an educational request"
+    );
+    assert.ok(
+      (session.data.additional_notes || "").includes("authorization failure"),
+      "should record that the fallback stub handled the response"
     );
   } finally {
-    if (originalNodeEnv === undefined) {
+    openAi.setComplianceResponder(unexpectedOpenAiCall);
+
+    if (previousNodeEnv === undefined) {
       delete process.env.NODE_ENV;
     } else {
-      process.env.NODE_ENV = originalNodeEnv;
+      process.env.NODE_ENV = previousNodeEnv;
     }
 
-    if (originalStubFlag === undefined) {
-      delete process.env.OPENAI_STUB;
+    if (previousStrict === undefined) {
+      delete process.env.OPENAI_STRICT;
     } else {
-      process.env.OPENAI_STUB = originalStubFlag;
+      process.env.OPENAI_STRICT = previousStrict;
     }
-
-    if (originalApiKey === undefined) {
-      delete process.env.OPENAI_API_KEY;
-    } else {
-      process.env.OPENAI_API_KEY = originalApiKey;
-    }
-
-    openAiTesting?.setClientFactory?.(null);
-    openAiTesting?.reset?.();
-    openAi.setComplianceResponder(unexpectedOpenAiCall);
   }
 });
-
