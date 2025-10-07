@@ -248,6 +248,35 @@ const fallbackComplianceStub = async ({ messages = [] }, { status } = {}) => {
   return { reply, compliance };
 };
 
+const parseStrictFlag = (value) => {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+};
+
+const truthyStrictValues = new Set(["1", "true", "yes", "on"]);
+
+const shouldFallbackToStubOnUnauthorized = (error, env = process.env) => {
+  const status = getErrorStatusCode(error);
+  if (status !== 401) {
+    return false;
+  }
+  const strict = parseStrictFlag(env.OPENAI_STRICT);
+  const strictEnabled = truthyStrictValues.has(strict);
+  return !strictEnabled;
+};
+
+export { shouldFallbackToStubOnUnauthorized };
+
+const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
+  const client = await getClient();
+  const completion = await client.chat.completions.create({
+    model,
+    messages,
+    response_format: { type: "json_schema", json_schema: complianceSchema },
+    temperature: 0.2
+  });
+
 export const shouldFallbackToStubOnUnauthorized = (error) => {
   const status = getErrorStatusCode(error);
   if (status !== 401) {

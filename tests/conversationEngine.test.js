@@ -322,7 +322,61 @@ test("free-form fallback routes questions to the compliance assistant", async ()
   }
 });
 
-test("free-form questions use the built-in stub when OPENAI_STUB is enabled", async () => {
+test("investment explorer surfaces authorised funds and market scan alternatives", async () => {
+  sessionStore.resetSessions();
+  const session = sessionStore.createSession();
+  session.stage = "SEGMENT_E_OPTIONS";
+  session.context.options.preferenceLevel = "detailed";
+  session.context.options.step = 4;
+
+  session.data.client_profile.objectives = "growth";
+  session.data.client_profile.risk_tolerance = 5;
+  session.data.client_profile.horizon_years = 8;
+
+  session.data.sustainability_preferences = {
+    preference_level: "detailed",
+    labels_interest: ["Sustainability: Impact"],
+    themes: ["Climate"],
+    exclusions: [],
+    impact_goals: ["Energy transition"],
+    engagement_importance: "High",
+    reporting_frequency_pref: "quarterly",
+    tradeoff_tolerance: "Moderate",
+    educ_pack_sent: true
+  };
+
+  const response = await conversation.handleClientTurn(
+    session,
+    "Can you suggest some sustainable fund options?"
+  );
+
+  assert.ok(
+    response.messages[0].includes("on-panel investments"),
+    "should list authorised investments first"
+  );
+  assert.ok(
+    response.messages[1].includes("Market scan alternatives"),
+    "should include a wider market scan summary"
+  );
+  assert.ok(
+    response.messages[2].includes("adviser recommendation"),
+    "should remind the client that an adviser must approve any selection"
+  );
+
+  assert.ok(Array.isArray(session.data.investment_research));
+  assert.strictEqual(session.data.investment_research.length, 1);
+  const log = session.data.investment_research[0];
+  assert.ok(
+    log.authorised_matches.includes("aurora_green_growth"),
+    "should capture authorised matches in the research log"
+  );
+  assert.ok(
+    log.alternative_matches.includes("solstice_global_impact"),
+    "should capture market alternatives in the research log"
+  );
+});
+
+test("401 unauthorized falls back to the local stub in production", async () => {
   sessionStore.resetSessions();
   const session = sessionStore.createSession();
 
