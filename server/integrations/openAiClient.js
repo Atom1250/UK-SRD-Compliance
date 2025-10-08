@@ -40,98 +40,27 @@ const complianceSchema = {
   }
 };
 
-let cachedClient = null;
-let OpenAIClass = null;
-let responder = null;
-let clientFactory = null;
+let cachedClient;
+let OpenAIConstructor;
+let customResponder;
 
-const STUB_FLAG_VALUES = new Set(["1", "true", "yes", "stub", "mock", "fake"]);
-
-const shouldUseBuiltInStub = () => {
-  if (responder) {
-    return false;
-  }
-
-  const stubFlag = (process.env.OPENAI_STUB ?? process.env.OPENAI_MODE ?? "")
-    .toString()
-    .trim()
-    .toLowerCase();
-  if (stubFlag && STUB_FLAG_VALUES.has(stubFlag)) {
-    return true;
-  }
-
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    const environment = (process.env.NODE_ENV ?? "").toLowerCase();
-    return environment !== "production";
-  }
-
-  return /^(stub|test|fake|placeholder)$/i.test(apiKey.trim());
-};
-
-const isProductionEnvironment = () => {
-  return (process.env.NODE_ENV ?? "").toLowerCase() === "production";
-};
-
-  if (!isProductionEnvironment()) {
-    return true;
-  }
-
-  const stubFlag = (process.env.OPENAI_STUB ?? process.env.OPENAI_MODE ?? "")
-    .toString()
-    .trim()
-    .toLowerCase();
-  return stubFlag && STUB_FLAG_VALUES.has(stubFlag);
-};
-
-const extractLastUserMessage = (messages = []) => {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const entry = messages[index];
-    if (entry && entry.role === "user" && typeof entry.content === "string") {
-      return entry.content;
-    }
-  }
-  return null;
-};
-
-const builtInStubResponder = async ({ messages, reason } = {}) => {
-  const prompt = extractLastUserMessage(Array.isArray(messages) ? messages : []);
-  const replyParts = [
-    "I’m running in local test mode so I can’t reach the compliance assistant right now.",
-    prompt ? `You asked: "${prompt}".` : null,
-    reason ? reason : null,
-    "Provide a valid OPENAI_API_KEY (or unset OPENAI_STUB) to enable live answers."
-  ].filter(Boolean);
-
-  return {
-    reply: replyParts.join(" "),
-    compliance: {
-      notes: [
-        "OpenAI compliance responder stub executed (no external API call).",
-        reason ? `Fallback reason: ${reason}` : null
-      ].filter(Boolean)
-    }
-  };
-};
-
-
-const loadOpenAI = async () => {
-  if (OpenAIClass) {
-    return OpenAIClass;
+async function loadOpenAIClass() {
+  if (OpenAIConstructor) {
+    return OpenAIConstructor;
   }
 
   try {
     const mod = await import("openai");
-    OpenAIClass = mod?.default ?? mod.OpenAI ?? mod;
-    return OpenAIClass;
+    OpenAIConstructor = mod?.default ?? mod.OpenAI ?? mod;
+    return OpenAIConstructor;
   } catch (error) {
     throw Object.assign(new Error("The openai package is not installed"), {
       status: 500
     });
   }
-};
+}
 
-const getClient = async () => {
+async function getClient() {
   if (cachedClient) {
     return cachedClient;
   }
@@ -151,12 +80,12 @@ const getClient = async () => {
     });
   }
 
-  const OpenAIConstructor = await loadOpenAI();
-  cachedClient = new OpenAIConstructor({ apiKey });
+  const OpenAIClass = await loadOpenAIClass();
+  cachedClient = new OpenAIClass({ apiKey });
   return cachedClient;
-};
+}
 
-const parseContent = (choice) => {
+function parseContent(choice) {
   const content = choice?.message?.content;
   if (typeof content === "string") {
     return content;
@@ -167,9 +96,9 @@ const parseContent = (choice) => {
       .join("");
   }
   return "";
-};
+}
 
-const coerceMessageText = (value) => {
+function coerceMessageText(value) {
   if (typeof value === "string") {
     return value;
   }
@@ -190,11 +119,14 @@ const coerceMessageText = (value) => {
     return value.text;
   }
   return "";
-};
+}
 
-const getErrorStatusCode = (error) => {
-  if (!error) return undefined;
-  const possible = [
+function getErrorStatusCode(error) {
+  if (!error) {
+    return undefined;
+  }
+
+  const candidates = [
     error.status,
     error.statusCode,
     error.code,
@@ -203,18 +135,23 @@ const getErrorStatusCode = (error) => {
     error?.cause?.status,
     error?.cause?.statusCode
   ];
-  return possible.map(Number).find((value) => Number.isInteger(value)) ?? undefined;
-};
 
-const truncateText = (text, length = 200) => {
-  if (!text) return "";
+  return candidates.map(Number).find((value) => Number.isInteger(value));
+}
+
+function truncateText(text, length = 200) {
+  if (!text) {
+    return "";
+  }
+
   if (text.length <= length) {
     return text;
   }
-  return `${text.slice(0, Math.max(0, length - 1))}…`;
-};
 
-const fallbackComplianceStub = async ({ messages = [] }, { status } = {}) => {
+  return `${text.slice(0, Math.max(0, length - 1))}…`;
+}
+
+async function fallbackComplianceStub({ messages = [] } = {}, { status } = {}) {
   const lastUserMessage = [...messages]
     .reverse()
     .find((message) => message?.role === "user");
@@ -241,32 +178,28 @@ const fallbackComplianceStub = async ({ messages = [] }, { status } = {}) => {
     : "I couldn't reach the compliance assistant due to an authorization error, but I've logged this question for an adviser review.";
 
   return { reply, compliance };
-};
+}
 
-const parseStrictFlag = (value) => {
+function parseStrictFlag(value) {
   return String(value ?? "")
     .trim()
     .toLowerCase();
-};
+}
 
-const truthyStrictValues = new Set(["1", "true", "yes", "on"]);
-function shouldFallbackToStubOnUnauthorized(
-  error,
-  env = process.env
-) {
+const TRUTHY_STRICT_VALUES = new Set(["1", "true", "yes", "on"]);
+
+export function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
   const status = getErrorStatusCode(error);
   if (status !== 401) {
     return false;
   }
 
-  const strict = parseStrictFlag(env.OPENAI_STRICT);
-  const strictEnabled = truthyStrictValues.has(strict);
+  const strict = parseStrictFlag(env?.OPENAI_STRICT);
+  const strictEnabled = TRUTHY_STRICT_VALUES.has(strict);
   return !strictEnabled;
 }
 
-export { shouldFallbackToStubOnUnauthorized };
-
-const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
+async function defaultResponder({ messages, model = DEFAULT_MODEL }) {
   const client = await getClient();
   const completion = await client.chat.completions.create({
     model,
@@ -313,14 +246,14 @@ const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
 
     throw error;
   }
-};
+}
 
-export const setComplianceResponder = (fn) => {
-  responder = typeof fn === "function" ? fn : null;
-};
+export function setComplianceResponder(fn) {
+  customResponder = typeof fn === "function" ? fn : undefined;
+}
 
-export const callComplianceResponder = async (payload) => {
-  const handler = responder ?? defaultResponder;
+export async function callComplianceResponder(payload) {
+  const handler = customResponder ?? defaultResponder;
 
   try {
     return await handler(payload);
@@ -329,7 +262,8 @@ export const callComplianceResponder = async (payload) => {
       const status = getErrorStatusCode(error);
       return fallbackComplianceStub(payload, { status });
     }
+
     throw error;
   }
-};
+}
 
