@@ -43,6 +43,7 @@ const complianceSchema = {
 let cachedClient;
 let OpenAIConstructor;
 let customResponder;
+let clientFactory;
 
 async function loadOpenAIClass() {
   if (OpenAIConstructor) {
@@ -201,15 +202,6 @@ export function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
 
 async function defaultResponder({ messages, model = DEFAULT_MODEL }) {
   const client = await getClient();
-  const completion = await client.chat.completions.create({
-    model,
-    messages,
-    response_format: { type: "json_schema", json_schema: complianceSchema },
-    temperature: 0.2
-  });
-
-const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
-  const client = await getClient();
   try {
     const completion = await client.chat.completions.create({
       model,
@@ -226,11 +218,8 @@ const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
     return JSON.parse(content);
   } catch (error) {
     if (error?.status === 401 || error?.statusCode === 401) {
-      if (shouldFallbackToStubOnUnauthorized()) {
-        return builtInStubResponder({
-          messages,
-          reason: "The last compliance request was rejected by OpenAI (401 unauthorized)."
-        });
+      if (shouldFallbackToStubOnUnauthorized(error)) {
+        return fallbackComplianceStub({ messages });
       }
 
       const err = new Error(
@@ -267,25 +256,6 @@ async function callComplianceResponder(payload) {
   }
 }
 
-export function setComplianceResponder(fn) {
-  customResponder = typeof fn === "function" ? fn : undefined;
-}
-
-export async function callComplianceResponder(payload) {
-  const handler = customResponder ?? defaultResponder;
-
-  try {
-    return await handler(payload);
-  } catch (error) {
-    if (shouldFallbackToStubOnUnauthorized(error)) {
-      const status = getErrorStatusCode(error);
-      return fallbackComplianceStub(payload, { status });
-    }
-
-    throw error;
-  }
-}
-
 const openAiClient = {
   COMPLIANCE_SYSTEM_PROMPT,
   shouldFallbackToStubOnUnauthorized,
@@ -294,4 +264,3 @@ const openAiClient = {
 };
 
 export default openAiClient;
-
