@@ -73,11 +73,6 @@ const isProductionEnvironment = () => {
   return (process.env.NODE_ENV ?? "").toLowerCase() === "production";
 };
 
-const shouldFallbackToStubOnUnauthorized = () => {
-  if (responder) {
-    return false;
-  }
-
   if (!isProductionEnvironment()) {
     return true;
   }
