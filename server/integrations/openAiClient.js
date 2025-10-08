@@ -256,7 +256,7 @@ const parseStrictFlag = (value) => {
 
 const truthyStrictValues = new Set(["1", "true", "yes", "on"]);
 
-const shouldFallbackToStubOnUnauthorizedInternal = (
+const shouldFallbackToStubOnUnauthorized = (
   error,
   env = process.env
 ) => {
@@ -270,7 +270,7 @@ const shouldFallbackToStubOnUnauthorizedInternal = (
   return !strictEnabled;
 };
 
-export { shouldFallbackToStubOnUnauthorizedInternal as shouldFallbackToStubOnUnauthorized };
+export { shouldFallbackToStubOnUnauthorized };
 
 const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
   const client = await getClient();
@@ -344,7 +344,7 @@ export const callComplianceResponder = async (payload) => {
   try {
     return await handler(payload);
   } catch (error) {
-    if (shouldFallbackToStubOnUnauthorizedInternal(error)) {
+    if (shouldFallbackToStubOnUnauthorized(error)) {
       const status = getErrorStatusCode(error);
       return fallbackComplianceStub(payload, { status });
     }
