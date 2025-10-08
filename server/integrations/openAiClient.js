@@ -256,7 +256,10 @@ const parseStrictFlag = (value) => {
 
 const truthyStrictValues = new Set(["1", "true", "yes", "on"]);
 
-export function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
+const shouldFallbackToStubOnUnauthorizedInternal = (
+  error,
+  env = process.env
+) => {
   const status = getErrorStatusCode(error);
   if (status !== 401) {
     return false;
@@ -265,7 +268,9 @@ export function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
   const strict = parseStrictFlag(env.OPENAI_STRICT);
   const strictEnabled = truthyStrictValues.has(strict);
   return !strictEnabled;
-}
+};
+
+export { shouldFallbackToStubOnUnauthorizedInternal as shouldFallbackToStubOnUnauthorized };
 
 const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
   const client = await getClient();
@@ -339,23 +344,11 @@ export const callComplianceResponder = async (payload) => {
   try {
     return await handler(payload);
   } catch (error) {
-    if (shouldFallbackToStubOnUnauthorized(error)) {
+    if (shouldFallbackToStubOnUnauthorizedInternal(error)) {
       const status = getErrorStatusCode(error);
       return fallbackComplianceStub(payload, { status });
     }
     throw error;
-  }
-};
-
-export const __testing = {
-  setClientFactory: (factory) => {
-    clientFactory = typeof factory === "function" ? factory : null;
-    cachedClient = null;
-  },
-  reset: () => {
-    cachedClient = null;
-    OpenAIClass = null;
-    clientFactory = null;
   }
 };
 
