@@ -1,6 +1,6 @@
 const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 
-export const COMPLIANCE_SYSTEM_PROMPT = `You are an FCA Consumer Duty compliance co-pilot.
+const COMPLIANCE_SYSTEM_PROMPT = `You are an FCA Consumer Duty compliance co-pilot.
 - Answer as the assistant for a UK sustainability preference pathway meeting.
 - Be transparent about guardrails and note when adviser review is required.
 - Keep the client on topic with SDR, ESG, and suitability requirements.
@@ -62,6 +62,14 @@ async function loadOpenAIClass() {
 
 async function getClient() {
   if (cachedClient) {
+    return cachedClient;
+  }
+
+  if (clientFactory) {
+    cachedClient = await clientFactory();
+    if (!cachedClient) {
+      throw new Error("Mock OpenAI client factory did not return a client instance");
+    }
     return cachedClient;
   }
 
@@ -200,15 +208,62 @@ async function defaultResponder({ messages, model = DEFAULT_MODEL }) {
     temperature: 0.2
   });
 
-  const content = parseContent(completion.choices?.[0]);
-  if (!content) {
-    throw new Error("OpenAI returned an empty response");
-  }
-
+const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
+  const client = await getClient();
   try {
+    const completion = await client.chat.completions.create({
+      model,
+      messages,
+      response_format: { type: "json_schema", json_schema: complianceSchema },
+      temperature: 0.2
+    });
+
+    const content = parseContent(completion.choices?.[0]);
+    if (!content) {
+      throw new Error("OpenAI returned an empty response");
+    }
+
     return JSON.parse(content);
   } catch (error) {
-    throw new Error("OpenAI returned invalid JSON payload");
+    if (error?.status === 401 || error?.statusCode === 401) {
+      if (shouldFallbackToStubOnUnauthorized()) {
+        return builtInStubResponder({
+          messages,
+          reason: "The last compliance request was rejected by OpenAI (401 unauthorized)."
+        });
+      }
+
+      const err = new Error(
+        "OpenAI rejected the compliance request. Check OPENAI_API_KEY or enable the stub via OPENAI_STUB=true."
+      );
+      err.status = 502;
+      throw err;
+    }
+
+    if (error instanceof SyntaxError) {
+      throw new Error("OpenAI returned invalid JSON payload");
+    }
+
+    throw error;
+  }
+}
+
+function setComplianceResponder(fn) {
+  customResponder = typeof fn === "function" ? fn : undefined;
+}
+
+async function callComplianceResponder(payload) {
+  const handler = customResponder ?? defaultResponder;
+
+  try {
+    return await handler(payload);
+  } catch (error) {
+    if (shouldFallbackToStubOnUnauthorized(error)) {
+      const status = getErrorStatusCode(error);
+      return fallbackComplianceStub(payload, { status });
+    }
+
+    throw error;
   }
 }
 
