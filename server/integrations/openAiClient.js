@@ -188,7 +188,7 @@ function parseStrictFlag(value) {
 
 const TRUTHY_STRICT_VALUES = new Set(["1", "true", "yes", "on"]);
 
-function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
+export function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
   const status = getErrorStatusCode(error);
   if (status !== 401) {
     return false;
@@ -267,14 +267,26 @@ async function callComplianceResponder(payload) {
   }
 }
 
-const openAiClient = {
-  COMPLIANCE_SYSTEM_PROMPT,
-  shouldFallbackToStubOnUnauthorized,
-  setComplianceResponder,
-  callComplianceResponder
-};
+export function setComplianceResponder(fn) {
+  customResponder = typeof fn === "function" ? fn : undefined;
+}
 
-export {
+export async function callComplianceResponder(payload) {
+  const handler = customResponder ?? defaultResponder;
+
+  try {
+    return await handler(payload);
+  } catch (error) {
+    if (shouldFallbackToStubOnUnauthorized(error)) {
+      const status = getErrorStatusCode(error);
+      return fallbackComplianceStub(payload, { status });
+    }
+
+    throw error;
+  }
+}
+
+const openAiClient = {
   COMPLIANCE_SYSTEM_PROMPT,
   shouldFallbackToStubOnUnauthorized,
   setComplianceResponder,
