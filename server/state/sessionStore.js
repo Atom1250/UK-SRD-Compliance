@@ -97,6 +97,7 @@ const createEmptySessionData = (sessionId) => ({
   },
   educational_requests: [],
   extra_questions: [],
+  investment_research: [],
   additional_notes: ""
 });
 
