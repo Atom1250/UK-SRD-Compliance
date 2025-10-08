@@ -256,10 +256,7 @@ const parseStrictFlag = (value) => {
 
 const truthyStrictValues = new Set(["1", "true", "yes", "on"]);
 
-export function shouldFallbackToStubOnUnauthorized(
-  error,
-  env = process.env
-) {
+function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
   const status = getErrorStatusCode(error);
   if (status !== 401) {
     return false;
@@ -270,6 +267,8 @@ export function shouldFallbackToStubOnUnauthorized(
   return !strictEnabled;
 }
 
+export { shouldFallbackToStubOnUnauthorized };
+
 const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
   const client = await getClient();
   const completion = await client.chat.completions.create({
@@ -278,19 +277,6 @@ const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
     response_format: { type: "json_schema", json_schema: complianceSchema },
     temperature: 0.2
   });
-
-export const shouldFallbackToStubOnUnauthorized = (error) => {
-  const status = getErrorStatusCode(error);
-  if (status !== 401) {
-    return false;
-  }
-
-  const strict = String(process.env.OPENAI_STRICT ?? "")
-    .trim()
-    .toLowerCase();
-  const strictEnabled = ["1", "true", "yes", "on"].includes(strict);
-  return !strictEnabled;
-};
 
 const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
   const client = await getClient();
