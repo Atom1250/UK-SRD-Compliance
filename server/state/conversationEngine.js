@@ -22,10 +22,9 @@ import {
 } from "./investmentUniverse.js";
 import { generateReportArtifacts } from "../report/reportGenerator.js";
 import { storeReportArtifacts } from "../report/reportStore.js";
-import {
-  callComplianceResponder,
-  COMPLIANCE_SYSTEM_PROMPT
-} from "../integrations/openAiClient.js";
+import openAiClient from "../integrations/openAiClient.js";
+
+const { callComplianceResponder, COMPLIANCE_SYSTEM_PROMPT } = openAiClient;
 
 const yesPatterns =
   /\b(yes|yep|i (consent|agree|understand|accept)|sure|ok(ay)?|ready|understood)\b/i;
