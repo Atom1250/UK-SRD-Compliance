@@ -5,15 +5,7 @@ process.env.SESSION_DB_PATH = ":memory:";
 
 const sessionStore = await import("../server/state/sessionStore.js");
 const openAi = await import("../server/integrations/openAiClient.js");
-
-const unexpectedOpenAiCall = async () => {
-  throw new Error("OpenAI stub was not configured for this test");
-};
-
-openAi.setComplianceResponder(unexpectedOpenAiCall);
-
 const conversation = await import("../server/state/conversationEngine.js");
-const openAi = await import("../server/integrations/openAiClient.js");
 
 const unexpectedOpenAiCall = async () => {
   throw new Error("OpenAI stub was not configured for this test");
@@ -292,5 +284,116 @@ test("free-form fallback routes questions to the compliance assistant", async ()
     );
   } finally {
     openAi.setComplianceResponder(unexpectedOpenAiCall);
+  }
+});
+
+test("investment explorer surfaces authorised funds and market scan alternatives", async () => {
+  sessionStore.resetSessions();
+  const session = sessionStore.createSession();
+  session.stage = "SEGMENT_E_OPTIONS";
+  session.context.options.preferenceLevel = "detailed";
+  session.context.options.step = 4;
+
+  session.data.client_profile.objectives = "growth";
+  session.data.client_profile.risk_tolerance = 5;
+  session.data.client_profile.horizon_years = 8;
+
+  session.data.sustainability_preferences = {
+    preference_level: "detailed",
+    labels_interest: ["Sustainability: Impact"],
+    themes: ["Climate"],
+    exclusions: [],
+    impact_goals: ["Energy transition"],
+    engagement_importance: "High",
+    reporting_frequency_pref: "quarterly",
+    tradeoff_tolerance: "Moderate",
+    educ_pack_sent: true
+  };
+
+  const response = await conversation.handleClientTurn(
+    session,
+    "Can you suggest some sustainable fund options?"
+  );
+
+  assert.ok(
+    response.messages[0].includes("on-panel investments"),
+    "should list authorised investments first"
+  );
+  assert.ok(
+    response.messages[1].includes("Market scan alternatives"),
+    "should include a wider market scan summary"
+  );
+  assert.ok(
+    response.messages[2].includes("adviser recommendation"),
+    "should remind the client that an adviser must approve any selection"
+  );
+
+  assert.ok(Array.isArray(session.data.investment_research));
+  assert.strictEqual(session.data.investment_research.length, 1);
+  const log = session.data.investment_research[0];
+  assert.ok(
+    log.authorised_matches.includes("aurora_green_growth"),
+    "should capture authorised matches in the research log"
+  );
+  assert.ok(
+    log.alternative_matches.includes("solstice_global_impact"),
+    "should capture market alternatives in the research log"
+  );
+});
+
+test("401 unauthorized falls back to the local stub in production", async () => {
+  sessionStore.resetSessions();
+  const session = sessionStore.createSession();
+  session.stage = "SEGMENT_B_ONBOARDING";
+  session.context.onboardingStep = 0;
+
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousStrict = process.env.OPENAI_STRICT;
+
+  process.env.NODE_ENV = "production";
+  delete process.env.OPENAI_STRICT;
+
+  const unauthorizedResponder = async () => {
+    const error = new Error("Unauthorized");
+    error.status = 401;
+    throw error;
+  };
+
+  openAi.setComplianceResponder(unauthorizedResponder);
+
+  try {
+    const result = await conversation.handleClientTurn(
+      session,
+      "Could you outline the sustainability reporting fees?"
+    );
+
+    assert.ok(
+      result.messages[0].includes("authorization error"),
+      "should respond with the stub message when OpenAI is unauthorized"
+    );
+    assert.ok(
+      session.data.educational_requests.some((entry) =>
+        entry.includes("sustainability reporting fees")
+      ),
+      "should log the free-form question as an educational request"
+    );
+    assert.ok(
+      (session.data.additional_notes || "").includes("authorization failure"),
+      "should record that the fallback stub handled the response"
+    );
+  } finally {
+    openAi.setComplianceResponder(unexpectedOpenAiCall);
+
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+
+    if (previousStrict === undefined) {
+      delete process.env.OPENAI_STRICT;
+    } else {
+      process.env.OPENAI_STRICT = previousStrict;
+    }
   }
 });
