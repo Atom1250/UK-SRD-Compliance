@@ -163,6 +163,32 @@ test("structured options require impact goals when Impact label is chosen", asyn
   );
 });
 
+test("education acknowledgement accepts an 'Understood' confirmation", async () => {
+  sessionStore.resetSessions();
+  const session = sessionStore.createSession();
+  session.stage = "SEGMENT_D_EDUCATION";
+  session.context.education = {
+    acknowledged: false,
+    summaryOffered: false,
+    summarised: false
+  };
+
+  const response = await conversation.handleClientTurn(session, "Understood");
+
+  assert.ok(
+    session.context.education.acknowledged,
+    "education acknowledgement should be recorded"
+  );
+  assert.ok(
+    session.data.timestamps.education_completed_at,
+    "education completion timestamp should be set"
+  );
+  assert.ok(
+    response.messages.some((message) => /summaris/i.test(message)),
+    "should offer the education summary after acknowledgement"
+  );
+});
+
 test("onboarding handles multi-field answers and confirms goals", async () => {
   sessionStore.resetSessions();
   const session = sessionStore.createSession();
