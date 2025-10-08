@@ -90,6 +90,101 @@ const parseContent = (choice) => {
   return "";
 };
 
+const coerceMessageText = (value) => {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((part) => {
+        if (typeof part === "string") {
+          return part;
+        }
+        if (typeof part?.text === "string") {
+          return part.text;
+        }
+        return "";
+      })
+      .join("");
+  }
+  if (value && typeof value === "object" && typeof value.text === "string") {
+    return value.text;
+  }
+  return "";
+};
+
+const getErrorStatusCode = (error) => {
+  if (!error) return undefined;
+  const possible = [
+    error.status,
+    error.statusCode,
+    error.code,
+    error?.response?.status,
+    error?.response?.statusCode,
+    error?.cause?.status,
+    error?.cause?.statusCode
+  ];
+  return possible.map(Number).find((value) => Number.isInteger(value)) ?? undefined;
+};
+
+const truncateText = (text, length = 200) => {
+  if (!text) return "";
+  if (text.length <= length) {
+    return text;
+  }
+  return `${text.slice(0, Math.max(0, length - 1))}…`;
+};
+
+const fallbackComplianceStub = async ({ messages = [] }, { status } = {}) => {
+  const lastUserMessage = [...messages]
+    .reverse()
+    .find((message) => message?.role === "user");
+  const rawContent = coerceMessageText(lastUserMessage?.content);
+  const trimmed = rawContent.trim().replace(/\s+/g, " ");
+  const summary = truncateText(trimmed);
+
+  const noteSuffix = status ? ` (status ${status})` : "";
+  const complianceNotes = [
+    `Fallback compliance stub used after an OpenAI authorization failure${noteSuffix}.`
+  ];
+
+  const educationalRequests = summary
+    ? [`Free-form question logged for adviser review: ${summary}`]
+    : [];
+
+  const compliance = {
+    educational_requests: educationalRequests,
+    notes: complianceNotes
+  };
+
+  const reply = summary
+    ? `I couldn't reach the compliance assistant due to an authorization error, but I've logged your question about "${summary}" for an adviser review.`
+    : "I couldn't reach the compliance assistant due to an authorization error, but I've logged this question for an adviser review.";
+
+  return { reply, compliance };
+};
+
+const parseStrictFlag = (value) => {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+};
+
+const truthyStrictValues = new Set(["1", "true", "yes", "on"]);
+
+function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
+  const status = getErrorStatusCode(error);
+  if (status !== 401) {
+    return false;
+  }
+
+  const strict = parseStrictFlag(env.OPENAI_STRICT);
+  const strictEnabled = truthyStrictValues.has(strict);
+  return !strictEnabled;
+}
+
+export { shouldFallbackToStubOnUnauthorized };
+
 const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
   const client = await getClient();
   const completion = await client.chat.completions.create({
@@ -117,6 +212,15 @@ export const setComplianceResponder = (fn) => {
 
 export const callComplianceResponder = async (payload) => {
   const handler = responder ?? defaultResponder;
-  return handler(payload);
+
+  try {
+    return await handler(payload);
+  } catch (error) {
+    if (shouldFallbackToStubOnUnauthorized(error)) {
+      const status = getErrorStatusCode(error);
+      return fallbackComplianceStub(payload, { status });
+    }
+    throw error;
+  }
 };
 
