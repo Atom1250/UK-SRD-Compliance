@@ -1,6 +1,6 @@
 const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 
-export const COMPLIANCE_SYSTEM_PROMPT = `You are an FCA Consumer Duty compliance co-pilot.
+const COMPLIANCE_SYSTEM_PROMPT = `You are an FCA Consumer Duty compliance co-pilot.
 - Answer as the assistant for a UK sustainability preference pathway meeting.
 - Be transparent about guardrails and note when adviser review is required.
 - Keep the client on topic with SDR, ESG, and suitability requirements.
@@ -188,7 +188,7 @@ function parseStrictFlag(value) {
 
 const TRUTHY_STRICT_VALUES = new Set(["1", "true", "yes", "on"]);
 
-export function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
+function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
   const status = getErrorStatusCode(error);
   if (status !== 401) {
     return false;
@@ -248,11 +248,11 @@ const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
   }
 }
 
-export function setComplianceResponder(fn) {
+function setComplianceResponder(fn) {
   customResponder = typeof fn === "function" ? fn : undefined;
 }
 
-export async function callComplianceResponder(payload) {
+async function callComplianceResponder(payload) {
   const handler = customResponder ?? defaultResponder;
 
   try {
@@ -266,4 +266,20 @@ export async function callComplianceResponder(payload) {
     throw error;
   }
 }
+
+const openAiClient = {
+  COMPLIANCE_SYSTEM_PROMPT,
+  shouldFallbackToStubOnUnauthorized,
+  setComplianceResponder,
+  callComplianceResponder
+};
+
+export {
+  COMPLIANCE_SYSTEM_PROMPT,
+  shouldFallbackToStubOnUnauthorized,
+  setComplianceResponder,
+  callComplianceResponder
+};
+
+export default openAiClient;
 
