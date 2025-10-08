@@ -250,8 +250,7 @@ const parseStrictFlag = (value) => {
 };
 
 const truthyStrictValues = new Set(["1", "true", "yes", "on"]);
-
-export function shouldFallbackToStubOnUnauthorized(
+function shouldFallbackToStubOnUnauthorized(
   error,
   env = process.env
 ) {
@@ -264,6 +263,8 @@ export function shouldFallbackToStubOnUnauthorized(
   const strictEnabled = truthyStrictValues.has(strict);
   return !strictEnabled;
 }
+
+export { shouldFallbackToStubOnUnauthorized };
 
 const defaultResponder = async ({ messages, model = DEFAULT_MODEL }) => {
   const client = await getClient();
