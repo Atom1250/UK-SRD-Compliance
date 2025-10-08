@@ -15,8 +15,7 @@ const complianceSchema = {
     properties: {
       reply: {
         type: "string",
-        description:
-          "Natural language response to the client's free-form query."
+        description: "Natural language response to the client's free-form query."
       },
       compliance: {
         type: "object",
@@ -42,7 +41,9 @@ const complianceSchema = {
 
 let cachedClient;
 let OpenAIConstructor;
+let clientFactory;
 let customResponder;
+
 async function loadOpenAIClass() {
   if (OpenAIConstructor) {
     return OpenAIConstructor;
@@ -57,6 +58,15 @@ async function loadOpenAIClass() {
       status: 500
     });
   }
+}
+
+export function setOpenAIClientFactory(factory) {
+  clientFactory = typeof factory === "function" ? factory : undefined;
+  cachedClient = undefined;
+}
+
+export function resetOpenAIClientCache() {
+  cachedClient = undefined;
 }
 
 async function getClient() {
@@ -96,6 +106,7 @@ function parseContent(choice) {
   }
   return "";
 }
+
 function coerceMessageText(value) {
   if (typeof value === "string") {
     return value;
@@ -197,71 +208,7 @@ export function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
   return !strictEnabled;
 }
 
-async function defaultResponder({ messages, model = DEFAULT_MODEL }) {
-  const client = await getClient();
-  const completion = await client.chat.completions.create({
-    model,
-    messages,
-    response_format: { type: "json_schema", json_schema: complianceSchema },
-    temperature: 0.2
-  });
-
-  if (text.length <= length) {
-    return text;
-  }
-
-  return `${text.slice(0, Math.max(0, length - 1))}…`;
-}
-
-async function fallbackComplianceStub({ messages = [] } = {}, { status } = {}) {
-  const lastUserMessage = [...messages]
-    .reverse()
-    .find((message) => message?.role === "user");
-  const rawContent = coerceMessageText(lastUserMessage?.content);
-  const trimmed = rawContent.trim().replace(/\s+/g, " ");
-  const summary = truncateText(trimmed);
-
-  const noteSuffix = status ? ` (status ${status})` : "";
-  const complianceNotes = [
-    `Fallback compliance stub used after an OpenAI authorization failure${noteSuffix}.`
-  ];
-
-  const educationalRequests = summary
-    ? [`Free-form question logged for adviser review: ${summary}`]
-    : [];
-
-  const compliance = {
-    educational_requests: educationalRequests,
-    notes: complianceNotes
-  };
-
-  const reply = summary
-    ? `I couldn't reach the compliance assistant due to an authorization error, but I've logged your question about "${summary}" for an adviser review.`
-    : "I couldn't reach the compliance assistant due to an authorization error, but I've logged this question for an adviser review.";
-
-  return { reply, compliance };
-}
-
-function parseStrictFlag(value) {
-  return String(value ?? "")
-    .trim()
-    .toLowerCase();
-}
-
-const TRUTHY_STRICT_VALUES = new Set(["1", "true", "yes", "on"]);
-
-export function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
-  const status = getErrorStatusCode(error);
-  if (status !== 401) {
-    return false;
-  }
-
-  const strict = parseStrictFlag(env?.OPENAI_STRICT);
-  const strictEnabled = TRUTHY_STRICT_VALUES.has(strict);
-  return !strictEnabled;
-}
-
-async function defaultResponder({ messages, model = DEFAULT_MODEL }) {
+async function defaultResponder({ messages, model = DEFAULT_MODEL } = {}) {
   const client = await getClient();
   try {
     const completion = await client.chat.completions.create({
@@ -271,18 +218,19 @@ async function defaultResponder({ messages, model = DEFAULT_MODEL }) {
       temperature: 0.2
     });
 
-    const content = parseContent(completion.choices?.[0]);
+    const content = parseContent(completion?.choices?.[0]);
     if (!content) {
       throw new Error("OpenAI returned an empty response");
     }
 
     return JSON.parse(content);
   } catch (error) {
-    if (error?.status === 401 || error?.statusCode === 401) {
-      if (shouldFallbackToStubOnUnauthorized(error)) {
-        return fallbackComplianceStub({ messages });
-      }
+    if (shouldFallbackToStubOnUnauthorized(error)) {
+      const status = getErrorStatusCode(error);
+      return fallbackComplianceStub({ messages }, { status });
+    }
 
+    if (getErrorStatusCode(error) === 401) {
       const err = new Error(
         "OpenAI rejected the compliance request. Check OPENAI_API_KEY or enable the stub via OPENAI_STUB=true."
       );
@@ -314,6 +262,7 @@ export async function callComplianceResponder(payload) {
     throw error;
   }
 }
+
 const openAiClient = {
   COMPLIANCE_SYSTEM_PROMPT,
   shouldFallbackToStubOnUnauthorized,
@@ -322,4 +271,3 @@ const openAiClient = {
 };
 
 export default openAiClient;
-
