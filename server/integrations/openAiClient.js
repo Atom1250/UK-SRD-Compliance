@@ -232,7 +232,6 @@ function buildComplianceStub(
     educational_requests: educationalRequests,
     notes: complianceNotes
   };
-
   const guidance =
     typeof guidanceBuilder === "function"
       ? guidanceBuilder({ summary, raw: trimmed })
