@@ -56,7 +56,17 @@ async function loadOpenAIClass() {
     OpenAIConstructor = mod?.default ?? mod.OpenAI ?? mod;
     return OpenAIConstructor;
   } catch (error) {
-    const err = new Error("The openai package is not installed");
+    const isModuleNotFound =
+      error?.code === "ERR_MODULE_NOT_FOUND" ||
+      /Cannot find module 'openai'/i.test(error?.message || "");
+
+    if (!isModuleNotFound) {
+      throw error;
+    }
+
+    const err = new Error(
+      "The openai package is not installed. Run `npm install` from the project root to add it to node_modules."
+    );
     err.status = 500;
     err.code = "OPENAI_NOT_INSTALLED";
     throw err;
@@ -163,7 +173,47 @@ function truncateText(text, length = 200) {
   return `${text.slice(0, Math.max(0, length - 1))}…`;
 }
 
-function buildComplianceStub({ messages = [] } = {}, { note, replyPrefix, status } = {}) {
+const stubGuidanceLibrary = [
+  {
+    test: /pathway/i,
+    build: () =>
+      "here's what we can confirm right now: your current sustainability pathway remains as recorded. Any updates will be reviewed with you before changes are made."
+  },
+  {
+    test: /(cost|fee)/i,
+    build: () =>
+      "we've noted your question about charges. We'll confirm fee calculations against the disclosure pack and respond once the live assistant is available."
+  },
+  {
+    test: /(risk|atr|capacity)/i,
+    build: () =>
+      "the documented risk profile and capacity for loss stay unchanged. We'll revisit suitability if you flag new information when the adviser follows up."
+  },
+  {
+    test: /(esg|sustainab|impact|sdg)/i,
+    build: () =>
+      "the ESG preferences you've captured so far remain valid. We'll provide any extra disclosures about fund coverage during the adviser review."
+  }
+];
+
+function selectStubGuidance(summary) {
+  if (!summary) {
+    return "I've recorded this for adviser review and will provide a detailed answer once the live assistant is back online.";
+  }
+
+  const entry = stubGuidanceLibrary.find((item) => item.test.test(summary));
+
+  if (entry) {
+    return entry.build(summary);
+  }
+
+  return `I've logged your question about "${summary}" and the adviser team will respond with a full answer shortly.`;
+}
+
+function buildComplianceStub(
+  { messages = [] } = {},
+  { note, replyPrefix, status, guidanceBuilder } = {}
+) {
   const lastUserMessage = [...messages]
     .reverse()
     .find((message) => message?.role === "user");
@@ -182,10 +232,13 @@ function buildComplianceStub({ messages = [] } = {}, { note, replyPrefix, status
     educational_requests: educationalRequests,
     notes: complianceNotes
   };
+  const guidance =
+    typeof guidanceBuilder === "function"
+      ? guidanceBuilder({ summary, raw: trimmed })
+      : selectStubGuidance(summary);
 
-  const reply = summary
-    ? `${replyPrefix} I've logged your question about "${summary}" for an adviser review.`
-    : `${replyPrefix} I've logged this question for an adviser review.`;
+  const normalisedPrefix = replyPrefix ? `${replyPrefix.trim()} ` : "";
+  const reply = `${normalisedPrefix}${guidance}`.trim();
 
   return { reply, compliance };
 }
@@ -231,7 +284,9 @@ async function defaultResponder({ messages, model = DEFAULT_MODEL } = {}) {
       {
         note: "Compliance stub responder used because OPENAI_STUB is enabled",
         replyPrefix:
-          "The compliance assistant stub is active while the OpenAI integration is disabled, so"
+          "The compliance assistant stub is active while the OpenAI integration is disabled, so",
+        guidanceBuilder: ({ summary }) =>
+          `${selectStubGuidance(summary)} If you want live answers, set an OPENAI_API_KEY and restart the server.`
       }
     );
   }
@@ -258,7 +313,8 @@ async function defaultResponder({ messages, model = DEFAULT_MODEL } = {}) {
         {
           note: "Compliance stub responder used because the OpenAI SDK is not installed",
           replyPrefix:
-            "I couldn't reach the compliance assistant because the OpenAI SDK isn't available, but"
+            "The compliance assistant is running in offline mode because the OpenAI SDK isn't available. Run `npm install` and restart the server to enable live answers. In the meantime,",
+          guidanceBuilder: ({ summary }) => selectStubGuidance(summary)
         }
       );
     }
