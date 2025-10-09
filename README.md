@@ -23,6 +23,22 @@ the client approves the draft.
    - After you type “approve”, the page reveals the generated report preview and
      a PDF download link.
 
+### Configuring the compliance assistant
+
+The free-form "Ask a question" button can either call OpenAI or fall back to a
+local stub for environments without external network access:
+
+- Set `OPENAI_API_KEY` and (optionally) `OPENAI_MODEL` before starting the
+  server to enable live OpenAI completions.
+- Set `OPENAI_STUB=true` to bypass the OpenAI SDK entirely. The server will log
+  the user's free-form question for adviser review and return a placeholder
+  answer so the workflow continues.
+- If the OpenAI SDK is not installed, the server automatically switches to the
+  stub responder and records that the dependency is missing.
+
+When OpenAI rejects a request with `401 Unauthorized`, the responder also
+switches to the stub unless `OPENAI_STRICT=true` is set.
+
 ### Quick API smoke test
 
 From a second terminal you can hit the same running server with `curl`:

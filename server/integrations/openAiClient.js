@@ -39,6 +39,8 @@ const complianceSchema = {
   }
 };
 
+const TRUTHY_FLAGS = new Set(["1", "true", "yes", "on"]);
+
 let cachedClient;
 let OpenAIConstructor;
 let clientFactory;
@@ -54,9 +56,10 @@ async function loadOpenAIClass() {
     OpenAIConstructor = mod?.default ?? mod.OpenAI ?? mod;
     return OpenAIConstructor;
   } catch (error) {
-    throw Object.assign(new Error("The openai package is not installed"), {
-      status: 500
-    });
+    const err = new Error("The openai package is not installed");
+    err.status = 500;
+    err.code = "OPENAI_NOT_INSTALLED";
+    throw err;
   }
 }
 
@@ -160,7 +163,7 @@ function truncateText(text, length = 200) {
   return `${text.slice(0, Math.max(0, length - 1))}…`;
 }
 
-async function fallbackComplianceStub({ messages = [] } = {}, { status } = {}) {
+function buildComplianceStub({ messages = [] } = {}, { note, replyPrefix, status } = {}) {
   const lastUserMessage = [...messages]
     .reverse()
     .find((message) => message?.role === "user");
@@ -169,9 +172,7 @@ async function fallbackComplianceStub({ messages = [] } = {}, { status } = {}) {
   const summary = truncateText(trimmed);
 
   const noteSuffix = status ? ` (status ${status})` : "";
-  const complianceNotes = [
-    `Fallback compliance stub used after an OpenAI authorization failure${noteSuffix}.`
-  ];
+  const complianceNotes = note ? [`${note}${noteSuffix}`] : [];
 
   const educationalRequests = summary
     ? [`Free-form question logged for adviser review: ${summary}`]
@@ -183,10 +184,22 @@ async function fallbackComplianceStub({ messages = [] } = {}, { status } = {}) {
   };
 
   const reply = summary
-    ? `I couldn't reach the compliance assistant due to an authorization error, but I've logged your question about "${summary}" for an adviser review.`
-    : "I couldn't reach the compliance assistant due to an authorization error, but I've logged this question for an adviser review.";
+    ? `${replyPrefix} I've logged your question about "${summary}" for an adviser review.`
+    : `${replyPrefix} I've logged this question for an adviser review.`;
 
   return { reply, compliance };
+}
+
+async function fallbackComplianceStub({ messages = [] } = {}, { status } = {}) {
+  return buildComplianceStub(
+    { messages },
+    {
+      status,
+      note: "Fallback compliance stub used after an OpenAI authorization failure",
+      replyPrefix:
+        "I couldn't reach the compliance assistant due to an authorization error, but"
+    }
+  );
 }
 
 function parseStrictFlag(value) {
@@ -195,7 +208,10 @@ function parseStrictFlag(value) {
     .toLowerCase();
 }
 
-const TRUTHY_STRICT_VALUES = new Set(["1", "true", "yes", "on"]);
+function isStubEnabled(env = process.env) {
+  const strict = parseStrictFlag(env?.OPENAI_STUB);
+  return TRUTHY_FLAGS.has(strict);
+}
 
 export function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
   const status = getErrorStatusCode(error);
@@ -204,13 +220,24 @@ export function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
   }
 
   const strict = parseStrictFlag(env?.OPENAI_STRICT);
-  const strictEnabled = TRUTHY_STRICT_VALUES.has(strict);
+  const strictEnabled = TRUTHY_FLAGS.has(strict);
   return !strictEnabled;
 }
 
 async function defaultResponder({ messages, model = DEFAULT_MODEL } = {}) {
-  const client = await getClient();
+  if (isStubEnabled()) {
+    return buildComplianceStub(
+      { messages },
+      {
+        note: "Compliance stub responder used because OPENAI_STUB is enabled",
+        replyPrefix:
+          "The compliance assistant stub is active while the OpenAI integration is disabled, so"
+      }
+    );
+  }
+
   try {
+    const client = await getClient();
     const completion = await client.chat.completions.create({
       model,
       messages,
@@ -225,6 +252,17 @@ async function defaultResponder({ messages, model = DEFAULT_MODEL } = {}) {
 
     return JSON.parse(content);
   } catch (error) {
+    if (error?.code === "OPENAI_NOT_INSTALLED") {
+      return buildComplianceStub(
+        { messages },
+        {
+          note: "Compliance stub responder used because the OpenAI SDK is not installed",
+          replyPrefix:
+            "I couldn't reach the compliance assistant because the OpenAI SDK isn't available, but"
+        }
+      );
+    }
+
     if (shouldFallbackToStubOnUnauthorized(error)) {
       const status = getErrorStatusCode(error);
       return fallbackComplianceStub({ messages }, { status });
