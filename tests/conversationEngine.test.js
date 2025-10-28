@@ -423,3 +423,45 @@ test("401 unauthorized falls back to the local stub in production", async () => 
     }
   }
 });
+
+test("OPENAI_STUB returns the local compliance placeholder", async () => {
+  sessionStore.resetSessions();
+  const session = sessionStore.createSession();
+  session.stage = "SEGMENT_B_ONBOARDING";
+  session.context.onboardingStep = 0;
+
+  const previousStubFlag = process.env.OPENAI_STUB;
+
+  process.env.OPENAI_STUB = "true";
+  openAi.setComplianceResponder(undefined);
+
+  try {
+    const result = await conversation.handleClientTurn(
+      session,
+      "Can we proceed without the live compliance assistant?"
+    );
+
+    assert.ok(
+      /stub is active/i.test(result.messages[0]),
+      "should notify the user that the stub responder handled the query"
+    );
+    assert.ok(
+      session.data.educational_requests.some((entry) =>
+        entry.includes("live compliance assistant")
+      ),
+      "should log the free-form query for adviser review"
+    );
+    assert.ok(
+      (session.data.additional_notes || "").includes("stub responder"),
+      "should record that the stub generated the reply"
+    );
+  } finally {
+    openAi.setComplianceResponder(unexpectedOpenAiCall);
+
+    if (previousStubFlag === undefined) {
+      delete process.env.OPENAI_STUB;
+    } else {
+      process.env.OPENAI_STUB = previousStubFlag;
+    }
+  }
+});

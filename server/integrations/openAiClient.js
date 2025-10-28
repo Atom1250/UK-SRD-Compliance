@@ -15,8 +15,7 @@ const complianceSchema = {
     properties: {
       reply: {
         type: "string",
-        description:
-          "Natural language response to the client's free-form query."
+        description: "Natural language response to the client's free-form query."
       },
       compliance: {
         type: "object",
@@ -40,9 +39,13 @@ const complianceSchema = {
   }
 };
 
+const TRUTHY_FLAGS = new Set(["1", "true", "yes", "on"]);
+
 let cachedClient;
 let OpenAIConstructor;
+let clientFactory;
 let customResponder;
+
 async function loadOpenAIClass() {
   if (OpenAIConstructor) {
     return OpenAIConstructor;
@@ -53,10 +56,30 @@ async function loadOpenAIClass() {
     OpenAIConstructor = mod?.default ?? mod.OpenAI ?? mod;
     return OpenAIConstructor;
   } catch (error) {
-    throw Object.assign(new Error("The openai package is not installed"), {
-      status: 500
-    });
+    const isModuleNotFound =
+      error?.code === "ERR_MODULE_NOT_FOUND" ||
+      /Cannot find module 'openai'/i.test(error?.message || "");
+
+    if (!isModuleNotFound) {
+      throw error;
+    }
+
+    const err = new Error(
+      "The openai package is not installed. Run `npm install` from the project root to add it to node_modules."
+    );
+    err.status = 500;
+    err.code = "OPENAI_NOT_INSTALLED";
+    throw err;
   }
+}
+
+export function setOpenAIClientFactory(factory) {
+  clientFactory = typeof factory === "function" ? factory : undefined;
+  cachedClient = undefined;
+}
+
+export function resetOpenAIClientCache() {
+  cachedClient = undefined;
 }
 
 async function getClient() {
@@ -96,6 +119,7 @@ function parseContent(choice) {
   }
   return "";
 }
+
 function coerceMessageText(value) {
   if (typeof value === "string") {
     return value;
@@ -149,7 +173,47 @@ function truncateText(text, length = 200) {
   return `${text.slice(0, Math.max(0, length - 1))}…`;
 }
 
-async function fallbackComplianceStub({ messages = [] } = {}, { status } = {}) {
+const stubGuidanceLibrary = [
+  {
+    test: /pathway/i,
+    build: () =>
+      "here's what we can confirm right now: your current sustainability pathway remains as recorded. Any updates will be reviewed with you before changes are made."
+  },
+  {
+    test: /(cost|fee)/i,
+    build: () =>
+      "we've noted your question about charges. We'll confirm fee calculations against the disclosure pack and respond once the live assistant is available."
+  },
+  {
+    test: /(risk|atr|capacity)/i,
+    build: () =>
+      "the documented risk profile and capacity for loss stay unchanged. We'll revisit suitability if you flag new information when the adviser follows up."
+  },
+  {
+    test: /(esg|sustainab|impact|sdg)/i,
+    build: () =>
+      "the ESG preferences you've captured so far remain valid. We'll provide any extra disclosures about fund coverage during the adviser review."
+  }
+];
+
+function selectStubGuidance(summary) {
+  if (!summary) {
+    return "I've recorded this for adviser review and will provide a detailed answer once the live assistant is back online.";
+  }
+
+  const entry = stubGuidanceLibrary.find((item) => item.test.test(summary));
+
+  if (entry) {
+    return entry.build(summary);
+  }
+
+  return `I've logged your question about "${summary}" and the adviser team will respond with a full answer shortly.`;
+}
+
+function buildComplianceStub(
+  { messages = [] } = {},
+  { note, replyPrefix, status, guidanceBuilder } = {}
+) {
   const lastUserMessage = [...messages]
     .reverse()
     .find((message) => message?.role === "user");
@@ -158,9 +222,7 @@ async function fallbackComplianceStub({ messages = [] } = {}, { status } = {}) {
   const summary = truncateText(trimmed);
 
   const noteSuffix = status ? ` (status ${status})` : "";
-  const complianceNotes = [
-    `Fallback compliance stub used after an OpenAI authorization failure${noteSuffix}.`
-  ];
+  const complianceNotes = note ? [`${note}${noteSuffix}`] : [];
 
   const educationalRequests = summary
     ? [`Free-form question logged for adviser review: ${summary}`]
@@ -171,75 +233,27 @@ async function fallbackComplianceStub({ messages = [] } = {}, { status } = {}) {
     notes: complianceNotes
   };
 
-  const reply = summary
-    ? `I couldn't reach the compliance assistant due to an authorization error, but I've logged your question about "${summary}" for an adviser review.`
-    : "I couldn't reach the compliance assistant due to an authorization error, but I've logged this question for an adviser review.";
+  const guidance =
+    typeof guidanceBuilder === "function"
+      ? guidanceBuilder({ summary, raw: trimmed })
+      : selectStubGuidance(summary);
+
+  const normalisedPrefix = replyPrefix ? `${replyPrefix.trim()} ` : "";
+  const reply = `${normalisedPrefix}${guidance}`.trim();
 
   return { reply, compliance };
-}
-
-function parseStrictFlag(value) {
-  return String(value ?? "")
-    .trim()
-    .toLowerCase();
-}
-
-const TRUTHY_STRICT_VALUES = new Set(["1", "true", "yes", "on"]);
-
-export function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
-  const status = getErrorStatusCode(error);
-  if (status !== 401) {
-    return false;
-  }
-
-  const strict = parseStrictFlag(env?.OPENAI_STRICT);
-  const strictEnabled = TRUTHY_STRICT_VALUES.has(strict);
-  return !strictEnabled;
-}
-
-async function defaultResponder({ messages, model = DEFAULT_MODEL }) {
-  const client = await getClient();
-  const completion = await client.chat.completions.create({
-    model,
-    messages,
-    response_format: { type: "json_schema", json_schema: complianceSchema },
-    temperature: 0.2
-  });
-
-  if (text.length <= length) {
-    return text;
-  }
-
-  return `${text.slice(0, Math.max(0, length - 1))}…`;
 }
 
 async function fallbackComplianceStub({ messages = [] } = {}, { status } = {}) {
-  const lastUserMessage = [...messages]
-    .reverse()
-    .find((message) => message?.role === "user");
-  const rawContent = coerceMessageText(lastUserMessage?.content);
-  const trimmed = rawContent.trim().replace(/\s+/g, " ");
-  const summary = truncateText(trimmed);
-
-  const noteSuffix = status ? ` (status ${status})` : "";
-  const complianceNotes = [
-    `Fallback compliance stub used after an OpenAI authorization failure${noteSuffix}.`
-  ];
-
-  const educationalRequests = summary
-    ? [`Free-form question logged for adviser review: ${summary}`]
-    : [];
-
-  const compliance = {
-    educational_requests: educationalRequests,
-    notes: complianceNotes
-  };
-
-  const reply = summary
-    ? `I couldn't reach the compliance assistant due to an authorization error, but I've logged your question about "${summary}" for an adviser review.`
-    : "I couldn't reach the compliance assistant due to an authorization error, but I've logged this question for an adviser review.";
-
-  return { reply, compliance };
+  return buildComplianceStub(
+    { messages },
+    {
+      status,
+      note: "Fallback compliance stub used after an OpenAI authorization failure",
+      replyPrefix:
+        "I couldn't reach the compliance assistant due to an authorization error, but"
+    }
+  );
 }
 
 function parseStrictFlag(value) {
@@ -248,7 +262,10 @@ function parseStrictFlag(value) {
     .toLowerCase();
 }
 
-const TRUTHY_STRICT_VALUES = new Set(["1", "true", "yes", "on"]);
+function isStubEnabled(env = process.env) {
+  const strict = parseStrictFlag(env?.OPENAI_STUB);
+  return TRUTHY_FLAGS.has(strict);
+}
 
 export function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
   const status = getErrorStatusCode(error);
@@ -257,13 +274,26 @@ export function shouldFallbackToStubOnUnauthorized(error, env = process.env) {
   }
 
   const strict = parseStrictFlag(env?.OPENAI_STRICT);
-  const strictEnabled = TRUTHY_STRICT_VALUES.has(strict);
+  const strictEnabled = TRUTHY_FLAGS.has(strict);
   return !strictEnabled;
 }
 
-async function defaultResponder({ messages, model = DEFAULT_MODEL }) {
-  const client = await getClient();
+async function defaultResponder({ messages, model = DEFAULT_MODEL } = {}) {
+  if (isStubEnabled()) {
+    return buildComplianceStub(
+      { messages },
+      {
+        note: "Compliance stub responder used because OPENAI_STUB is enabled",
+        replyPrefix:
+          "The compliance assistant stub is active while the OpenAI integration is disabled, so",
+        guidanceBuilder: ({ summary }) =>
+          `${selectStubGuidance(summary)} If you want live answers, set an OPENAI_API_KEY and restart the server.`
+      }
+    );
+  }
+
   try {
+    const client = await getClient();
     const completion = await client.chat.completions.create({
       model,
       messages,
@@ -271,18 +301,31 @@ async function defaultResponder({ messages, model = DEFAULT_MODEL }) {
       temperature: 0.2
     });
 
-    const content = parseContent(completion.choices?.[0]);
+    const content = parseContent(completion?.choices?.[0]);
     if (!content) {
       throw new Error("OpenAI returned an empty response");
     }
 
     return JSON.parse(content);
   } catch (error) {
-    if (error?.status === 401 || error?.statusCode === 401) {
-      if (shouldFallbackToStubOnUnauthorized(error)) {
-        return fallbackComplianceStub({ messages });
-      }
+    if (error?.code === "OPENAI_NOT_INSTALLED") {
+      return buildComplianceStub(
+        { messages },
+        {
+          note: "Compliance stub responder used because the OpenAI SDK is not installed",
+          replyPrefix:
+            "The compliance assistant is running in offline mode because the OpenAI SDK isn't available. Run `npm install` and restart the server to enable live answers. In the meantime,",
+          guidanceBuilder: ({ summary }) => selectStubGuidance(summary)
+        }
+      );
+    }
 
+    if (shouldFallbackToStubOnUnauthorized(error)) {
+      const status = getErrorStatusCode(error);
+      return fallbackComplianceStub({ messages }, { status });
+    }
+
+    if (getErrorStatusCode(error) === 401) {
       const err = new Error(
         "OpenAI rejected the compliance request. Check OPENAI_API_KEY or enable the stub via OPENAI_STUB=true."
       );
@@ -314,6 +357,7 @@ export async function callComplianceResponder(payload) {
     throw error;
   }
 }
+
 const openAiClient = {
   COMPLIANCE_SYSTEM_PROMPT,
   shouldFallbackToStubOnUnauthorized,
@@ -322,4 +366,3 @@ const openAiClient = {
 };
 
 export default openAiClient;
-
