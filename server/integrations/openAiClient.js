@@ -237,6 +237,11 @@ function buildComplianceStub(
       ? guidanceBuilder({ summary, raw: trimmed })
       : selectStubGuidance(summary);
 
+  const guidance =
+    typeof guidanceBuilder === "function"
+      ? guidanceBuilder({ summary, raw: trimmed })
+      : selectStubGuidance(summary);
+
   const normalisedPrefix = replyPrefix ? `${replyPrefix.trim()} ` : "";
   const reply = `${normalisedPrefix}${guidance}`.trim();
 

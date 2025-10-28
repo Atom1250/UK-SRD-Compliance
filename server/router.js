@@ -81,6 +81,35 @@ const handleGetSession = (res, id) => {
   });
 };
 
+const handleGetSessionAnalytics = async (res, sessionId) => {
+  const session = ensureSession(res, sessionId);
+  if (!session) return;
+
+  try {
+    const {
+      generateConversationSummary,
+      analyzeConversationEffectiveness
+    } = await import("./state/conversationAnalytics.js");
+
+    const summary = generateConversationSummary(session);
+    const effectiveness = analyzeConversationEffectiveness(session);
+
+    sendJSON(res, 200, {
+      session: toPublicSession(session),
+      analytics: {
+        summary,
+        effectiveness
+      }
+    });
+  } catch (error) {
+    const status = error?.status ?? 500;
+    const message =
+      error?.message ?? "Unable to generate conversation analytics";
+
+    sendJSON(res, status, { error: message });
+  }
+};
+
 const handleAppendEvent = async (req, res, id) => {
   const session = ensureSession(res, id);
   if (!session) return;
@@ -352,6 +381,11 @@ export const handleRequest = async (req, res) => {
 
       if ((req.method === "POST" || req.method === "GET") && tail === "validate") {
         handleValidate(res, sessionId);
+        return;
+      }
+
+      if (req.method === "GET" && tail === "analytics") {
+        await handleGetSessionAnalytics(res, sessionId);
         return;
       }
 
