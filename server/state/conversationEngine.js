@@ -74,12 +74,17 @@ import {
 
 // Import session monitor for real-time notifications
 let sessionMonitor = null;
-try {
-  const { sessionMonitor: monitor } = await import("../websocket/sessionMonitor.js");
-  sessionMonitor = monitor;
-} catch (error) {
-  // WebSocket monitor not available, continue without real-time features
-}
+import("../websocket/sessionMonitor.js")
+  .then(({ sessionMonitor: monitor }) => {
+    sessionMonitor = monitor;
+  })
+  .catch((error) => {
+    if (error?.code === 'ERR_MODULE_NOT_FOUND' || error?.code === 'MODULE_NOT_FOUND') {
+      console.log('WebSocket session monitor not available');
+    } else {
+      console.error('Failed to load WebSocket session monitor', error);
+    }
+  });
 import { validateSessionData } from "./validateSession.js";
 import {
   AUTHORIZED_INVESTMENTS,

@@ -215,16 +215,16 @@ const handleMultiModalInput = async (req, res, sessionId) => {
   }
 };
 
-const handleGetSessionAnalytics = (res, sessionId) => {
+const handleGetSessionAnalytics = async (res, sessionId) => {
   const session = ensureSession(res, sessionId);
   if (!session) return;
 
   try {
-    const { generateConversationSummary, analyzeConversationEffectiveness } = require("./state/conversationAnalytics.js");
-    
+    const { generateConversationSummary, analyzeConversationEffectiveness } = await import("./state/conversationAnalytics.js");
+
     const summary = generateConversationSummary(session);
     const effectiveness = analyzeConversationEffectiveness(session);
-    
+
     const analytics = {
       sessionId,
       summary,
@@ -1714,12 +1714,23 @@ const handleReviewRegulatoryChange = async (req, res, changeId) => {
 };
 
 export const handleRequest = async (req, res) => {
+  const startTime = Date.now();
+
   // Apply performance monitoring middleware
   performanceMiddleware(req, res, () => {});
-  
-  // Log request
-  logger.logRequest(req, res, 0); // Will be updated with actual response time
-  
+
+  let logged = false;
+  const logRequest = () => {
+    if (logged) return;
+    logged = true;
+    const responseTime = Date.now() - startTime;
+    logger.logRequest(req, res, responseTime);
+  };
+
+  res.on("finish", logRequest);
+  res.on("close", logRequest);
+  res.on("error", logRequest);
+
   if (req.method === "OPTIONS") {
     sendOptions(res);
     return;
@@ -1772,7 +1783,7 @@ export const handleRequest = async (req, res) => {
       }
 
       if (req.method === "GET" && tail === "analytics") {
-        handleGetSessionAnalytics(res, sessionId);
+        await handleGetSessionAnalytics(res, sessionId);
         return;
       }
 
