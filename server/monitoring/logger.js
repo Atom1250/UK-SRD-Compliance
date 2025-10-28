@@ -164,15 +164,29 @@ class Logger {
   // Specialized logging methods
   
   logRequest(req, res, responseTime) {
-    this.info('HTTP Request', {
-      method: req.method,
-      url: req.url,
-      userAgent: req.get('User-Agent'),
-      ip: req.ip || req.connection.remoteAddress,
-      statusCode: res.statusCode,
-      responseTime: `${responseTime}ms`,
-      contentLength: res.get('Content-Length')
-    });
+    try {
+      const context = {
+        method: req.method ?? 'UNKNOWN',
+        url: req.url ?? '',
+        userAgent: req.headers?.['user-agent'],
+        ip: req.socket?.remoteAddress ?? req.connection?.remoteAddress,
+        statusCode: typeof res.statusCode === 'number' ? res.statusCode : undefined,
+        responseTime: typeof responseTime === 'number' ? `${responseTime}ms` : undefined,
+        contentLength: typeof res.getHeader === 'function'
+          ? res.getHeader('content-length') ?? res.getHeader('Content-Length')
+          : undefined
+      };
+
+      for (const key of Object.keys(context)) {
+        if (context[key] === undefined || context[key] === null) {
+          delete context[key];
+        }
+      }
+
+      this.info('HTTP Request', context);
+    } catch (error) {
+      this.warn('Failed to log request', { error: error.message });
+    }
   }
   
   logSession(action, sessionId, context = {}) {
