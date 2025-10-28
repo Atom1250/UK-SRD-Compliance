@@ -1,0 +1,325 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "ESG Client Interview Bot Dashboard",
+    "tags": ["esg-bot", "monitoring"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Service Health",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "up{job=\"esg-bot\"}",
+            "legendFormat": "Service Status"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {
+                "options": {
+                  "0": {
+                    "text": "DOWN",
+                    "color": "red"
+                  },
+                  "1": {
+                    "text": "UP",
+                    "color": "green"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 6,
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": 2,
+        "title": "Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "legendFormat": "Requests/sec"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Requests per second"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 9,
+          "x": 6,
+          "y": 0
+        }
+      },
+      {
+        "id": 3,
+        "title": "Error Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{status=~\"5..\"}[5m]) / rate(http_requests_total[5m]) * 100",
+            "legendFormat": "Error Rate %"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Percentage",
+            "max": 100,
+            "min": 0
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 9,
+          "x": 15,
+          "y": 0
+        }
+      },
+      {
+        "id": 4,
+        "title": "Response Time",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "50th percentile"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "99th percentile"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Seconds"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 8
+        }
+      },
+      {
+        "id": 5,
+        "title": "Active Sessions",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "esg_bot_active_sessions",
+            "legendFormat": "Active Sessions"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 6,
+          "x": 12,
+          "y": 8
+        }
+      },
+      {
+        "id": 6,
+        "title": "Session Completion Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(esg_bot_sessions_completed[1h]) / rate(esg_bot_sessions_started[1h]) * 100",
+            "legendFormat": "Completion Rate %"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Percentage",
+            "max": 100,
+            "min": 0
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 18,
+          "y": 8
+        }
+      },
+      {
+        "id": 7,
+        "title": "Memory Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "process_resident_memory_bytes / 1024 / 1024",
+            "legendFormat": "RSS Memory (MB)"
+          },
+          {
+            "expr": "nodejs_heap_size_used_bytes / 1024 / 1024",
+            "legendFormat": "Heap Used (MB)"
+          },
+          {
+            "expr": "nodejs_heap_size_total_bytes / 1024 / 1024",
+            "legendFormat": "Heap Total (MB)"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Megabytes"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 16
+        }
+      },
+      {
+        "id": 8,
+        "title": "CPU Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(process_cpu_user_seconds_total[5m]) * 100",
+            "legendFormat": "User CPU %"
+          },
+          {
+            "expr": "rate(process_cpu_system_seconds_total[5m]) * 100",
+            "legendFormat": "System CPU %"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Percentage",
+            "max": 100,
+            "min": 0
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 16
+        }
+      },
+      {
+        "id": 9,
+        "title": "OpenAI API Metrics",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(esg_bot_openai_requests_total[5m])",
+            "legendFormat": "Requests/sec"
+          },
+          {
+            "expr": "rate(esg_bot_openai_errors_total[5m])",
+            "legendFormat": "Errors/sec"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Requests per second"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 24
+        }
+      },
+      {
+        "id": 10,
+        "title": "Database Connections",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "pg_stat_database_numbackends",
+            "legendFormat": "Active Connections"
+          },
+          {
+            "expr": "pg_settings_max_connections",
+            "legendFormat": "Max Connections"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Connections"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 24
+        }
+      },
+      {
+        "id": 11,
+        "title": "Conversation Segments",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(esg_bot_segment_completions_total[5m])",
+            "legendFormat": "{{segment}}"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Completions per second"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 32
+        }
+      },
+      {
+        "id": 12,
+        "title": "Report Generation",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(esg_bot_reports_generated_total[5m])",
+            "legendFormat": "Reports Generated/sec"
+          },
+          {
+            "expr": "rate(esg_bot_report_generation_failures[5m])",
+            "legendFormat": "Generation Failures/sec"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Reports per second"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 32
+        }
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "30s"
+  }
+}

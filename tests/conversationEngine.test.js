@@ -465,3 +465,76 @@ test("OPENAI_STUB returns the local compliance placeholder", async () => {
     }
   }
 });
+test("enhanced report generation creates professional PDF with security features", async () => {
+  const reportGenerator = await import("../server/report/reportGenerator.js");
+  const reportStore = await import("../server/report/reportStore.js");
+  
+  // Create a complete session for report generation
+  const session = {
+    id: 'test-enhanced-report-123',
+    data: {
+      client_profile: {
+        client_type: 'individual',
+        objectives: 'growth',
+        horizon_years: 10,
+        risk_tolerance: 5,
+        capacity_for_loss: 'medium',
+        liquidity_needs: 'Low - no immediate needs',
+        knowledge_experience: {
+          summary: 'Experienced investor with 5+ years'
+        }
+      },
+      sustainability_preferences: {
+        preference_level: 'detailed',
+        labels_interest: ['Focus', 'Impact'],
+        themes: ['climate', 'social equity'],
+        exclusions: [{ sector: 'fossil fuels', threshold: 5 }],
+        impact_goals: ['carbon reduction', 'social impact'],
+        engagement_importance: 'high',
+        reporting_frequency_pref: 'quarterly',
+        tradeoff_tolerance: 'moderate'
+      },
+      advice_outcome: {
+        recommendation: 'ESG Focus Portfolio',
+        rationale: 'Aligns with growth objectives and ESG preferences',
+        sust_fit: 'Strong alignment with climate and social themes',
+        costs_summary: '0.75% annual management charge'
+      }
+    }
+  };
+
+  // Test enhanced report generation
+  const artifacts = reportGenerator.generateReportArtifacts(session);
+  
+  assert.ok(artifacts.pdfBuffer instanceof Buffer, "should generate PDF buffer");
+  assert.ok(artifacts.pdfBuffer.length > 1000, "should generate substantial PDF content");
+  assert.ok(typeof artifacts.hash === 'string', "should generate SHA-256 hash");
+  assert.ok(artifacts.signatureReady === true, "should be prepared for digital signature");
+  assert.ok(artifacts.metadata.version === '2.0', "should include enhanced metadata");
+  assert.ok(Array.isArray(artifacts.metadata.signatureFields), "should define signature fields");
+
+  // Test secure storage
+  const storeResult = reportStore.storeReportArtifacts(session.id, artifacts.pdfBuffer, artifacts.metadata);
+  
+  assert.ok(storeResult.success === true, "should store report successfully");
+  assert.ok(typeof storeResult.accessToken === 'string', "should generate access token");
+  assert.ok(storeResult.version === 1, "should assign version number");
+  assert.ok(storeResult.hash === artifacts.hash, "should preserve hash integrity");
+
+  // Test secure retrieval
+  const retrieved = reportStore.getReportArtifact(session.id, storeResult.accessToken);
+  
+  assert.ok(retrieved !== null, "should retrieve report with valid token");
+  assert.ok(retrieved.buffer.equals(artifacts.pdfBuffer), "should retrieve identical PDF content");
+  assert.ok(retrieved.downloadCount === 1, "should track download count");
+  assert.ok(retrieved.hash === artifacts.hash, "should maintain hash integrity");
+
+  // Test access control
+  const deniedAccess = reportStore.getReportArtifact(session.id, 'invalid-token');
+  assert.ok(deniedAccess === null, "should deny access with invalid token");
+
+  // Test document integrity validation
+  const integrity = reportStore.validateDocumentIntegrity(session.id);
+  assert.ok(integrity.valid === true, "should validate document integrity");
+  assert.ok(integrity.hash === artifacts.hash, "should confirm hash matches");
+});

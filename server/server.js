@@ -1,5 +1,25 @@
 import http from "node:http";
+import { readFileSync } from "node:fs";
 import { handleRequest } from "./router.js";
+import { sessionMonitor } from "./websocket/sessionMonitor.js";
+
+// Load environment variables from .env file if it exists
+try {
+  const envFile = readFileSync('.env', 'utf8');
+  const envVars = envFile.split('\n')
+    .filter(line => line.trim() && !line.startsWith('#'))
+    .map(line => line.split('='))
+    .filter(([key, value]) => key && value);
+  
+  for (const [key, value] of envVars) {
+    if (!process.env[key]) {
+      process.env[key] = value;
+    }
+  }
+  console.log('Loaded environment variables from .env file');
+} catch (error) {
+  // .env file doesn't exist or can't be read, which is fine
+}
 
 const port = Number(process.env.PORT ?? 4000);
 
@@ -18,6 +38,9 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(port, () => {
   console.log(`Server ready on http://localhost:${port}`);
+  
+  // Initialize WebSocket session monitor
+  sessionMonitor.initialize(server);
 });
 
 process.on("SIGINT", () => {

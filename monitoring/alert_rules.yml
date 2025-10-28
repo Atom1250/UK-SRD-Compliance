@@ -1,0 +1,147 @@
+# Prometheus Alert Rules for ESG Client Interview Bot
+
+groups:
+  - name: esg-bot-alerts
+    rules:
+      # Application Health Alerts
+      - alert: ESGBotDown
+        expr: up{job="esg-bot"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: esg-bot
+        annotations:
+          summary: "ESG Bot service is down"
+          description: "ESG Bot service has been down for more than 1 minute"
+          
+      - alert: ESGBotHighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          service: esg-bot
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes"
+          
+      - alert: ESGBotSlowResponse
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: esg-bot
+        annotations:
+          summary: "Slow response times detected"
+          description: "95th percentile response time is {{ $value }}s"
+
+  - name: system-alerts
+    rules:
+      # System Resource Alerts
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }}"
+          
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}%"
+          
+      - alert: LowDiskSpace
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.1
+        for: 5m
+        labels:
+          severity: critical
+          service: system
+        annotations:
+          summary: "Low disk space"
+          description: "Disk space is {{ $value | humanizePercentage }} full"
+
+  - name: database-alerts
+    rules:
+      # Database Alerts
+      - alert: DatabaseConnectionsHigh
+        expr: pg_stat_database_numbackends / pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: database
+        annotations:
+          summary: "High database connections"
+          description: "Database connections are at {{ $value | humanizePercentage }} of maximum"
+          
+      - alert: DatabaseSlowQueries
+        expr: rate(pg_stat_database_tup_returned[5m]) / rate(pg_stat_database_tup_fetched[5m]) < 0.1
+        for: 10m
+        labels:
+          severity: warning
+          service: database
+        annotations:
+          summary: "Database queries are slow"
+          description: "Query efficiency is {{ $value | humanizePercentage }}"
+
+  - name: business-alerts
+    rules:
+      # Business Logic Alerts
+      - alert: LowSessionCompletionRate
+        expr: rate(esg_bot_sessions_completed[1h]) / rate(esg_bot_sessions_started[1h]) < 0.7
+        for: 30m
+        labels:
+          severity: warning
+          service: business
+        annotations:
+          summary: "Low session completion rate"
+          description: "Session completion rate is {{ $value | humanizePercentage }} over the last hour"
+          
+      - alert: HighGuardrailTriggers
+        expr: rate(esg_bot_guardrail_triggers[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          service: compliance
+        annotations:
+          summary: "High guardrail trigger rate"
+          description: "Guardrail triggers are occurring at {{ $value }} per second"
+          
+      - alert: ReportGenerationFailures
+        expr: rate(esg_bot_report_generation_failures[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: reports
+        annotations:
+          summary: "Report generation failures"
+          description: "Report generation failing at {{ $value }} per second"
+
+  - name: external-service-alerts
+    rules:
+      # External Service Alerts
+      - alert: OpenAIAPIDown
+        expr: esg_bot_openai_api_success_rate < 0.95
+        for: 5m
+        labels:
+          severity: critical
+          service: openai
+        annotations:
+          summary: "OpenAI API issues"
+          description: "OpenAI API success rate is {{ $value | humanizePercentage }}"
+          
+      - alert: OpenAIRateLimited
+        expr: rate(esg_bot_openai_rate_limit_errors[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: openai
+        annotations:
+          summary: "OpenAI rate limiting detected"
+          description: "OpenAI rate limit errors at {{ $value }} per second"

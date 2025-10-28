@@ -1,0 +1,53 @@
+# Prometheus Configuration for ESG Client Interview Bot
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alert_rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # ESG Bot Application Metrics
+  - job_name: 'esg-bot'
+    static_configs:
+      - targets: ['app:9090']
+    scrape_interval: 10s
+    metrics_path: /metrics
+    
+  # Node.js Process Metrics
+  - job_name: 'esg-bot-process'
+    static_configs:
+      - targets: ['app:8080']
+    scrape_interval: 30s
+    metrics_path: /metrics/process
+    
+  # System Metrics (Node Exporter)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 15s
+    
+  # Database Metrics
+  - job_name: 'postgres-exporter'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 30s
+    
+  # Nginx Metrics
+  - job_name: 'nginx-exporter'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+    scrape_interval: 15s
+    
+  # Redis Metrics (if using Redis)
+  - job_name: 'redis-exporter'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 30s

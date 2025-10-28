@@ -10,11 +10,76 @@ import {
   STAGE_PROMPTS
 } from "./constants.js";
 import {
+  processMultiModalInput,
+  detectClientSophistication,
+  generateAdaptivePrompt,
+  shouldOfferAlternativeInput,
+  generateInputModeSuggestions,
+  SOPHISTICATION_LEVELS,
+  INPUT_MODES
+} from "./inputProcessor.js";
+import {
+  ConversationContextStack,
+  analyzeSentiment,
+  trackClientEngagement,
+  adaptConversationStyle,
+  personalizeResponse,
+  manageConversationRecovery,
+  CONTEXT_TYPES,
+  SENTIMENT_CATEGORIES,
+  ENGAGEMENT_LEVELS
+} from "./contextManager.js";
+import {
+  performComprehensiveNLP,
+  personalizeResponseWithNLP,
+  INTENT_CATEGORIES,
+  LANGUAGE_COMPLEXITY
+} from "./enhancedNLP.js";
+import {
+  trackAnalyticsEvent,
+  analyzeConversationEffectiveness,
+  generateConversationSummary,
+  ANALYTICS_EVENT_TYPES
+} from "./conversationAnalytics.js";
+import { 
+  EDUCATION_MODULES, 
+  trackEducationalProgress, 
+  recordComprehensionResponse, 
+  trackPdfDownload,
+  getEducationalRecommendations,
+  generateEducationalSummary
+} from './educationModules.js';
+import {
+  ENHANCED_COMPLIANCE_REASONS,
+  createComplianceAuditEntry,
+  validateComplianceCheckpoint,
+  generateComplianceSummary
+} from './complianceSystem.js';
+import {
+  evaluateSessionGuardrails,
+  getSessionRiskAssessment,
+  requiresEscalation,
+  ENHANCED_GUARDRAIL_CONFIG
+} from './enhancedGuardrails.js';
+import {
+  validateSessionRegulatoryCompliance,
+  getRegulatoryComplianceStatus
+} from './regulatoryChangeManager.js';
+import {
   appendEvent,
   applyDataPatch,
   saveSession,
   setStage
 } from "./sessionStore.js";
+
+// Import session monitor for real-time notifications
+let sessionMonitor = null;
+try {
+  const { sessionMonitor: monitor } = await import("../websocket/sessionMonitor.js");
+  sessionMonitor = monitor;
+} catch (error) {
+  // WebSocket monitor not available, continue without real-time features
+}
 import { validateSessionData } from "./validateSession.js";
 import {
   AUTHORIZED_INVESTMENTS,
@@ -30,25 +95,158 @@ const yesPatterns =
   /\b(yes|yep|i (consent|agree|understand|accept)|sure|ok(ay)?|ready|understood)\b/i;
 const noPatterns = /\b(no|nope|not (yet|now)|decline|refuse)\b/i;
 
-const normalise = (value) => value.trim().toLowerCase();
+// Enhanced input sanitization and validation
+export const sanitizeInput = (input) => {
+  if (typeof input !== 'string') {
+    return '';
+  }
+  
+  // Remove potentially harmful characters and normalize whitespace
+  return input
+    .replace(/[<>]/g, '') // Remove angle brackets to prevent XSS
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .trim()
+    .slice(0, 10000); // Limit input length to prevent DoS
+};
 
-const splitList = (text) =>
-  text
+// Enhanced guardrail evaluation and risk management
+export const evaluateEnhancedGuardrails = (session) => {
+  try {
+    // Run enhanced guardrail evaluation
+    const guardrailResults = evaluateSessionGuardrails(session);
+    
+    // Get regulatory compliance status
+    const regulatoryStatus = getRegulatoryComplianceStatus(session);
+    
+    // Combine results
+    const combinedResults = {
+      timestamp: new Date().toISOString(),
+      session_id: session.id,
+      guardrail_evaluation: guardrailResults,
+      regulatory_compliance: regulatoryStatus,
+      overall_risk_level: determineOverallRiskLevel(guardrailResults, regulatoryStatus),
+      escalation_required: guardrailResults.escalation_required || !regulatoryStatus.compliant,
+      required_actions: [
+        ...guardrailResults.required_actions,
+        ...(regulatoryStatus.critical_issues > 0 ? ['Address regulatory compliance issues'] : [])
+      ],
+      recommendations: guardrailResults.recommendations
+    };
+    
+    // Notify WebSocket monitor if escalation required
+    if (sessionMonitor && combinedResults.escalation_required) {
+      sessionMonitor.notifyGuardrailTrigger(session.id, 'enhanced_guardrail_escalation', {
+        message: `Enhanced guardrail evaluation requires escalation`,
+        riskLevel: combinedResults.overall_risk_level,
+        escalationLevel: guardrailResults.highest_escalation_level,
+        triggeredGuardrails: guardrailResults.triggered_guardrails.length,
+        regulatoryIssues: regulatoryStatus.critical_issues + regulatoryStatus.warnings
+      });
+    }
+    
+    // Create audit entry
+    createComplianceAuditEntry(session, 'enhanced_guardrail_evaluation', {
+      overall_risk_level: combinedResults.overall_risk_level,
+      triggered_guardrails: guardrailResults.triggered_guardrails.length,
+      escalation_required: combinedResults.escalation_required,
+      regulatory_compliant: regulatoryStatus.compliant,
+      applicable_rules: ['enhanced_guardrails', 'regulatory_compliance']
+    });
+    
+    return combinedResults;
+  } catch (error) {
+    console.error('Error in enhanced guardrail evaluation:', error);
+    
+    // Fallback to basic evaluation
+    return {
+      timestamp: new Date().toISOString(),
+      session_id: session.id,
+      error: 'Enhanced guardrail evaluation failed',
+      fallback_used: true,
+      escalation_required: false,
+      overall_risk_level: 'unknown'
+    };
+  }
+};
+
+// Determine overall risk level from multiple assessments
+const determineOverallRiskLevel = (guardrailResults, regulatoryStatus) => {
+  // Critical if regulatory non-compliance or critical guardrails
+  if (!regulatoryStatus.compliant || 
+      guardrailResults.overall_risk_score >= ENHANCED_GUARDRAIL_CONFIG.RISK_THRESHOLDS.CRITICAL) {
+    return 'critical';
+  }
+  
+  // High if high risk score or multiple warnings
+  if (guardrailResults.overall_risk_score >= ENHANCED_GUARDRAIL_CONFIG.RISK_THRESHOLDS.HIGH ||
+      regulatoryStatus.warnings >= 3) {
+    return 'high';
+  }
+  
+  // Medium if medium risk score or some warnings
+  if (guardrailResults.overall_risk_score >= ENHANCED_GUARDRAIL_CONFIG.RISK_THRESHOLDS.MEDIUM ||
+      regulatoryStatus.warnings >= 1) {
+    return 'medium';
+  }
+  
+  // Low if low risk score
+  if (guardrailResults.overall_risk_score >= ENHANCED_GUARDRAIL_CONFIG.RISK_THRESHOLDS.LOW) {
+    return 'low';
+  }
+  
+  return 'minimal';
+};
+
+const normalise = (value) => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  return sanitizeInput(value).toLowerCase();
+};
+
+const splitList = (text) => {
+  if (typeof text !== 'string') {
+    return [];
+  }
+  
+  const sanitized = sanitizeInput(text);
+  return sanitized
     .split(/[,\n]|\band\b/gi)
     .map((item) => item.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .slice(0, 50); // Limit number of items to prevent abuse
+};
 
 const parseInteger = (value) => {
-  const parsed = Number.parseInt(value.trim(), 10);
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return NaN;
+  }
+  
+  const sanitized = typeof value === 'string' ? sanitizeInput(value) : String(value);
+  const parsed = Number.parseInt(sanitized, 10);
   return Number.isFinite(parsed) ? parsed : NaN;
 };
 
 const parseMoneyValue = (text, keyword) => {
-  const pattern = new RegExp(`${keyword}[^\n\r\d]*([\d,.]+)`, "i");
-  const match = text.match(pattern);
-  if (!match) return null;
-  const numeric = Number(match[1].replace(/,/g, ""));
-  return Number.isFinite(numeric) ? numeric : null;
+  if (typeof text !== 'string' || typeof keyword !== 'string') {
+    return null;
+  }
+  
+  const sanitized = sanitizeInput(text);
+  const sanitizedKeyword = sanitizeInput(keyword);
+  
+  try {
+    const pattern = new RegExp(`${sanitizedKeyword}[^\n\r\d]*([\d,.]+)`, "i");
+    const match = sanitized.match(pattern);
+    if (!match) return null;
+    
+    const numeric = Number(match[1].replace(/,/g, ""));
+    // Validate reasonable money values (0 to 1 billion)
+    return Number.isFinite(numeric) && numeric >= 0 && numeric <= 1000000000 ? numeric : null;
+  } catch (error) {
+    console.warn('Error parsing money value:', error.message);
+    return null;
+  }
 };
 
 const ONBOARDING_QUESTIONS = {
@@ -123,7 +321,8 @@ const COMPLIANCE_REASONS = {
   }
 };
 
-const EDUCATION_MODULES = [
+// EDUCATION_MODULES now imported from educationModules.js
+const OLD_EDUCATION_MODULES_REMOVED = [
   {
     title: "ESG basics",
     keywords: [/\bwhat is esg\b/i, /\besg basics\b/i, /tell me more about esg/i],
@@ -188,28 +387,258 @@ const EDUCATION_MODULES = [
 
 const whyNeedPattern = /why do you need( to know)?/i;
 
-const ensureStringArray = (value) => (Array.isArray(value) ? value : []);
+const ensureStringArray = (value) => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter(item => typeof item === 'string').slice(0, 100); // Limit array size
+};
 
 const appendSessionArrayEntry = (session, key, entry) => {
-  if (!entry) return;
+  if (!entry || typeof entry !== 'string') return;
+  
+  // Validate session structure
+  if (!session || !session.data || typeof session.data !== 'object') {
+    console.warn('Invalid session structure in appendSessionArrayEntry');
+    return;
+  }
+  
   if (!Array.isArray(session.data[key])) {
     session.data[key] = [];
   }
-  session.data[key].push(entry);
+  
+  // Sanitize entry and limit array size
+  const sanitizedEntry = sanitizeInput(entry);
+  if (sanitizedEntry && session.data[key].length < 1000) {
+    session.data[key].push(sanitizedEntry);
+  }
 };
 
 const appendAdditionalNote = (session, note) => {
-  if (!note) return;
+  if (!note || typeof note !== 'string') return;
+  
+  // Validate session structure
+  if (!session || !session.data || typeof session.data !== 'object') {
+    console.warn('Invalid session structure in appendAdditionalNote');
+    return;
+  }
+  
+  const sanitizedNote = sanitizeInput(note);
+  if (!sanitizedNote) return;
+  
   const existing = session.data.additional_notes ?? "";
-  session.data.additional_notes = existing ? `${existing}\n${note}` : note;
+  const newNote = existing ? `${existing}\n${sanitizedNote}` : sanitizedNote;
+  
+  // Limit total notes length to prevent memory issues
+  session.data.additional_notes = newNote.slice(0, 50000);
 };
 
+// Enhanced investment research logging with comprehensive audit trails
 const appendInvestmentResearchLog = (session, entry) => {
-  if (!entry) return;
+  if (!entry || typeof entry !== 'object') return;
+  
+  // Validate session structure
+  if (!session || !session.data || typeof session.data !== 'object') {
+    console.warn('Invalid session structure in appendInvestmentResearchLog');
+    return;
+  }
+  
   if (!Array.isArray(session.data.investment_research)) {
     session.data.investment_research = [];
   }
-  session.data.investment_research.push(entry);
+  
+  // Enhanced entry with comprehensive audit information
+  const sanitizedEntry = {
+    id: randomUUID(),
+    at: entry.at || new Date().toISOString(),
+    query: typeof entry.query === 'string' ? sanitizeInput(entry.query) : '',
+    query_type: entry.query_type || 'general_exploration',
+    client_context: {
+      stage: session.stage,
+      risk_tolerance: session.data?.client_profile?.risk_tolerance,
+      objectives: session.data?.client_profile?.objectives,
+      horizon_years: session.data?.client_profile?.horizon_years,
+      preference_level: session.data?.sustainability_preferences?.preference_level,
+      labels_interest: session.data?.sustainability_preferences?.labels_interest || [],
+      themes: session.data?.sustainability_preferences?.themes || [],
+      exclusions: session.data?.sustainability_preferences?.exclusions || []
+    },
+    // Maintain backward compatibility for tests
+    authorised_matches: Array.isArray(entry.authorised_matches) ? entry.authorised_matches.slice(0, 50) : [],
+    alternative_matches: Array.isArray(entry.alternative_matches) ? entry.alternative_matches.slice(0, 50) : [],
+    search_results: {
+      authorised_matches: Array.isArray(entry.authorised_matches) ? 
+        entry.authorised_matches.slice(0, 50).map(matchId => ({
+          investment_id: matchId,
+          timestamp: new Date().toISOString()
+        })) : [],
+      alternative_matches: Array.isArray(entry.alternative_matches) ? 
+        entry.alternative_matches.slice(0, 50).map(matchId => ({
+          investment_id: matchId,
+          timestamp: new Date().toISOString()
+        })) : [],
+      total_universe_size: {
+        authorised: AUTHORIZED_INVESTMENTS.length,
+        alternatives: MARKET_ALTERNATIVES.length
+      }
+    },
+    match_quality: {
+      authorised_count: Array.isArray(entry.authorised_matches) ? entry.authorised_matches.length : 0,
+      alternative_count: Array.isArray(entry.alternative_matches) ? entry.alternative_matches.length : 0,
+      no_matches: (!entry.authorised_matches?.length && !entry.alternative_matches?.length)
+    },
+    advisor_flags: {
+      requires_review: (!entry.authorised_matches?.length && !entry.alternative_matches?.length),
+      complex_preferences: session.data?.sustainability_preferences?.preference_level === 'detailed',
+      risk_capacity_mismatch: checkRiskCapacityMismatch(session),
+      high_exclusion_requirements: (session.data?.sustainability_preferences?.exclusions?.length || 0) > 3
+    },
+    session_metadata: {
+      session_id: session.id,
+      client_ip: session.context?.client_ip,
+      user_agent: session.context?.user_agent
+    }
+  };
+  
+  if (session.data.investment_research.length < 100) {
+    session.data.investment_research.push(sanitizedEntry);
+  }
+  
+  // Trigger advisor notifications if needed
+  triggerAdvisorNotifications(session, sanitizedEntry);
+};
+
+// Helper function to check risk-capacity mismatch
+const checkRiskCapacityMismatch = (session) => {
+  const profile = session.data?.client_profile;
+  if (!profile?.risk_tolerance || !profile?.capacity_for_loss) return false;
+  
+  const capacityRiskMap = { 'low': 3, 'medium': 5, 'high': 7 };
+  const maxCapacityRisk = capacityRiskMap[normalise(profile.capacity_for_loss)] || 7;
+  
+  return profile.risk_tolerance > maxCapacityRisk;
+};
+
+// Enhanced risk assessment with comprehensive guardrail evaluation
+const performEnhancedRiskAssessment = (session) => {
+  try {
+    // Run enhanced guardrail evaluation
+    const enhancedResults = evaluateEnhancedGuardrails(session);
+    
+    // Store results in session for advisor review
+    if (!session.data.risk_assessments) {
+      session.data.risk_assessments = [];
+    }
+    
+    session.data.risk_assessments.push({
+      timestamp: new Date().toISOString(),
+      assessment_type: 'enhanced_guardrails',
+      results: enhancedResults,
+      triggered_by: 'conversation_flow'
+    });
+    
+    // Return assessment summary
+    return {
+      riskLevel: enhancedResults.overall_risk_level,
+      escalationRequired: enhancedResults.escalation_required,
+      criticalIssues: enhancedResults.guardrail_evaluation?.triggered_guardrails?.filter(
+        g => g.escalation_level === ENHANCED_GUARDRAIL_CONFIG.ESCALATION_LEVELS.IMMEDIATE
+      ) || [],
+      recommendations: enhancedResults.recommendations
+    };
+  } catch (error) {
+    console.error('Enhanced risk assessment failed:', error);
+    return {
+      riskLevel: 'unknown',
+      escalationRequired: false,
+      criticalIssues: [],
+      recommendations: [],
+      error: error.message
+    };
+  }
+};
+
+// Enhanced advisor notification system
+const triggerAdvisorNotifications = (session, researchEntry) => {
+  if (!session.data.advisor_notifications) {
+    session.data.advisor_notifications = [];
+  }
+  
+  const notifications = [];
+  
+  // No matches found - requires manual review
+  if (researchEntry.match_quality.no_matches) {
+    notifications.push({
+      id: randomUUID(),
+      type: 'investment_research_no_matches',
+      priority: 'high',
+      title: 'Investment Research: No Matches Found',
+      message: `Client query "${researchEntry.query}" returned no suitable investments. Manual review required.`,
+      client_context: researchEntry.client_context,
+      created_at: new Date().toISOString(),
+      requires_action: true,
+      session_id: session.id
+    });
+  }
+  
+  // Complex preferences requiring advisor input
+  if (researchEntry.advisor_flags.complex_preferences && researchEntry.match_quality.authorised_count > 0) {
+    notifications.push({
+      id: randomUUID(),
+      type: 'investment_research_complex_preferences',
+      priority: 'medium',
+      title: 'Investment Research: Complex Preferences',
+      message: `Client with detailed ESG preferences explored investments. ${researchEntry.match_quality.authorised_count} matches found requiring advisor review.`,
+      client_context: researchEntry.client_context,
+      created_at: new Date().toISOString(),
+      requires_action: true,
+      session_id: session.id
+    });
+  }
+  
+  // Risk-capacity mismatch detected
+  if (researchEntry.advisor_flags.risk_capacity_mismatch) {
+    notifications.push({
+      id: randomUUID(),
+      type: 'investment_research_risk_mismatch',
+      priority: 'high',
+      title: 'Investment Research: Risk-Capacity Mismatch',
+      message: `Client risk tolerance exceeds capacity for loss. Investment recommendations require careful advisor review.`,
+      client_context: researchEntry.client_context,
+      created_at: new Date().toISOString(),
+      requires_action: true,
+      session_id: session.id
+    });
+  }
+  
+  // High exclusion requirements
+  if (researchEntry.advisor_flags.high_exclusion_requirements) {
+    notifications.push({
+      id: randomUUID(),
+      type: 'investment_research_high_exclusions',
+      priority: 'medium',
+      title: 'Investment Research: Extensive Exclusion Criteria',
+      message: `Client has ${researchEntry.client_context.exclusions.length} exclusion criteria. Limited investment universe may require bespoke solutions.`,
+      client_context: researchEntry.client_context,
+      created_at: new Date().toISOString(),
+      requires_action: false,
+      session_id: session.id
+    });
+  }
+  
+  // Add notifications to session
+  notifications.forEach(notification => {
+    if (session.data.advisor_notifications.length < 50) {
+      session.data.advisor_notifications.push(notification);
+    }
+  });
+  
+  // Log advisor notification summary
+  if (notifications.length > 0) {
+    appendAdditionalNote(session, 
+      `Generated ${notifications.length} advisor notification(s): ${notifications.map(n => n.type).join(', ')}`
+    );
+  }
 };
 
 const INVESTMENT_EXPLORER_PATTERNS = [
@@ -232,21 +661,56 @@ const pickExactMatches = (preferred, available) => {
   );
 };
 
+// Enhanced exclusion criteria validation
+const validateExclusionCriteria = (clientExclusions, investmentExclusions) => {
+  if (!clientExclusions || !Array.isArray(clientExclusions) || !investmentExclusions) {
+    return { valid: true, reasons: [] };
+  }
+
+  const violations = [];
+  const satisfied = [];
+
+  for (const clientExclusion of clientExclusions) {
+    const sector = normalise(clientExclusion.sector || '');
+    const clientThreshold = clientExclusion.threshold || 0;
+    
+    // Find matching exclusion in investment
+    const matchingExclusion = Object.entries(investmentExclusions).find(([key]) => 
+      normalise(key.replace(/_/g, ' ')) === sector ||
+      normalise(key) === normalise(clientExclusion.sector)
+    );
+
+    if (matchingExclusion) {
+      const [exclusionKey, exclusionData] = matchingExclusion;
+      const investmentThreshold = exclusionData.threshold || 0;
+      
+      if (investmentThreshold <= clientThreshold) {
+        satisfied.push(`${clientExclusion.sector} exposure ${investmentThreshold}% (limit ${clientThreshold}%)`);
+      } else {
+        violations.push(`${clientExclusion.sector} exposure ${investmentThreshold}% exceeds limit ${clientThreshold}%`);
+      }
+    }
+  }
+
+  return {
+    valid: violations.length === 0,
+    violations,
+    satisfied,
+    reasons: satisfied
+  };
+};
+
+// Enhanced investment scoring with sophisticated weighting
 const evaluateInvestmentMatch = (session, investment) => {
   const profile = session.data?.client_profile ?? {};
   const prefs = session.data?.sustainability_preferences ?? {};
   let score = 0;
   const reasons = [];
+  const warnings = [];
 
-  const objectives = ensureArray(investment.objectives);
-  if (
-    profile.objectives &&
-    objectives.some((objective) => normalise(objective) === normalise(profile.objectives))
-  ) {
-    score += 2;
-    reasons.push(`Supports your ${profile.objectives} objective`);
-  }
-
+  // Core suitability checks (mandatory - return null if failed)
+  
+  // Risk tolerance alignment (weighted by precision of match)
   if (
     Number.isInteger(profile.risk_tolerance) &&
     Array.isArray(investment.risk_band) &&
@@ -254,25 +718,64 @@ const evaluateInvestmentMatch = (session, investment) => {
   ) {
     const [minRisk, maxRisk] = investment.risk_band;
     if (profile.risk_tolerance < minRisk || profile.risk_tolerance > maxRisk) {
-      return null;
+      return null; // Hard exclusion
     }
-    score += 1;
-    reasons.push(
-      `Aligned to risk level ${profile.risk_tolerance} within range ${minRisk}-${maxRisk}`
-    );
+    
+    // Bonus for being in the sweet spot of the risk band
+    const riskRange = maxRisk - minRisk;
+    const riskPosition = (profile.risk_tolerance - minRisk) / riskRange;
+    const riskBonus = riskPosition >= 0.3 && riskPosition <= 0.7 ? 0.5 : 0;
+    
+    score += 2 + riskBonus;
+    reasons.push(`Risk level ${profile.risk_tolerance} within range ${minRisk}-${maxRisk}`);
   }
 
+  // Time horizon alignment
   if (
     Number.isInteger(profile.horizon_years) &&
     Number.isFinite(investment.min_horizon_years)
   ) {
     if (profile.horizon_years < investment.min_horizon_years) {
-      return null;
+      return null; // Hard exclusion
     }
-    score += 0.5;
-    reasons.push(`Designed for ${investment.min_horizon_years}+ year horizons`);
+    
+    // Bonus for longer horizons with appropriate investments
+    const horizonBonus = profile.horizon_years >= investment.min_horizon_years * 1.5 ? 0.3 : 0;
+    score += 1 + horizonBonus;
+    reasons.push(`${profile.horizon_years}-year horizon suitable for ${investment.min_horizon_years}+ year investment`);
   }
 
+  // Objectives alignment (enhanced weighting)
+  const objectives = ensureArray(investment.objectives);
+  if (profile.objectives) {
+    const primaryMatch = objectives.some((objective) => 
+      normalise(objective) === normalise(profile.objectives)
+    );
+    
+    if (primaryMatch) {
+      score += 3; // Increased weight for primary objective match
+      reasons.push(`Primary objective alignment: ${profile.objectives}`);
+    } else {
+      // Check for compatible secondary objectives
+      const compatibleObjectives = {
+        'growth': ['impact'],
+        'income': ['preservation'],
+        'preservation': ['income'],
+        'impact': ['growth']
+      };
+      
+      const secondaryMatch = objectives.some((objective) =>
+        compatibleObjectives[normalise(profile.objectives)]?.includes(normalise(objective))
+      );
+      
+      if (secondaryMatch) {
+        score += 1;
+        reasons.push(`Compatible secondary objective match`);
+      }
+    }
+  }
+
+  // Sustainability preference level compatibility
   const preferenceLevel = prefs.preference_level ?? "none";
   if (preferenceLevel !== "none") {
     const supportedLevels = ensureArray(investment.preference_levels);
@@ -280,46 +783,167 @@ const evaluateInvestmentMatch = (session, investment) => {
       supportedLevels.length > 0 &&
       !supportedLevels.some((level) => normalise(level) === normalise(preferenceLevel))
     ) {
-      return null;
+      return null; // Hard exclusion
     }
     if (supportedLevels.length > 0) {
-      score += 0.5;
-      reasons.push(
-        `Suitable for ${preferenceLevel.replace(/_/g, " ")} preference profiles`
-      );
+      score += 1;
+      reasons.push(`Suitable for ${preferenceLevel.replace(/_/g, " ")} preferences`);
     }
   }
 
-  const matchedLabels = pickExactMatches(prefs.labels_interest, investment.labels);
-  if (matchedLabels.length > 0) {
-    score += 1.5;
-    reasons.push(`Carries ${matchedLabels.join(", ")} label alignment`);
+  // Enhanced exclusion criteria validation
+  if (prefs.exclusions && Array.isArray(prefs.exclusions)) {
+    const exclusionCheck = validateExclusionCriteria(prefs.exclusions, investment.exclusions);
+    
+    if (!exclusionCheck.valid) {
+      return null; // Hard exclusion for violations
+    }
+    
+    if (exclusionCheck.satisfied.length > 0) {
+      score += exclusionCheck.satisfied.length * 0.5;
+      reasons.push(`Exclusion criteria satisfied: ${exclusionCheck.satisfied.join(', ')}`);
+    }
   }
 
+  // SDR label alignment (enhanced scoring)
+  const matchedLabels = pickExactMatches(prefs.labels_interest, investment.labels);
+  if (matchedLabels.length > 0) {
+    // Higher weight for Impact and Focus labels
+    const impactWeight = matchedLabels.some(label => 
+      normalise(label).includes('impact')
+    ) ? 2.5 : 2;
+    
+    score += impactWeight;
+    reasons.push(`SDR label alignment: ${matchedLabels.join(", ")}`);
+  }
+
+  // Theme alignment (enhanced with weighting)
   const matchedThemes = pickExactMatches(prefs.themes, investment.themes);
   if (matchedThemes.length > 0) {
-    score += 0.5;
-    reasons.push(`Covers ${matchedThemes.join(", ")} themes`);
+    const themeBonus = Math.min(matchedThemes.length * 0.7, 2); // Cap at 2 points
+    score += themeBonus;
+    reasons.push(`Theme alignment: ${matchedThemes.join(", ")}`);
+  }
+
+  // Capacity for loss alignment
+  if (profile.capacity_for_loss && investment.risk_band) {
+    const [minRisk, maxRisk] = investment.risk_band;
+    const capacityRiskMap = { 'low': 3, 'medium': 5, 'high': 7 };
+    const maxCapacityRisk = capacityRiskMap[normalise(profile.capacity_for_loss)] || 7;
+    
+    if (maxRisk > maxCapacityRisk) {
+      warnings.push(`Investment risk may exceed capacity for loss (${profile.capacity_for_loss})`);
+      score -= 0.5; // Small penalty but not exclusion
+    } else {
+      score += 0.3;
+      reasons.push(`Appropriate for ${profile.capacity_for_loss} capacity for loss`);
+    }
+  }
+
+  // Liquidity needs consideration
+  if (profile.liquidity_needs && investment.liquidity) {
+    if (normalise(profile.liquidity_needs).includes('immediate') && 
+        normalise(investment.liquidity) === 'daily') {
+      score += 0.5;
+      reasons.push(`Daily liquidity meets immediate access needs`);
+    }
+  }
+
+  // Minimum investment threshold check
+  if (profile.financial_situation?.assets && investment.minimum_investment) {
+    const affordabilityRatio = investment.minimum_investment / (profile.financial_situation.assets || 1);
+    if (affordabilityRatio > 0.1) { // More than 10% of assets
+      warnings.push(`Minimum investment £${investment.minimum_investment} may be significant relative to assets`);
+    }
+  }
+
+  // Cost efficiency bonus for low-cost options
+  if (investment.charges) {
+    const chargeMatch = investment.charges.match(/(\d+\.?\d*)%/);
+    if (chargeMatch) {
+      const annualCharge = parseFloat(chargeMatch[1]);
+      if (annualCharge <= 0.3) {
+        score += 0.5;
+        reasons.push(`Low-cost option (${investment.charges})`);
+      } else if (annualCharge >= 1.0) {
+        score -= 0.2;
+        reasons.push(`Higher cost structure (${investment.charges})`);
+      }
+    }
+  }
+
+  // Impact metrics bonus for impact-focused clients
+  if (prefs.labels_interest?.some(label => normalise(label).includes('impact')) && 
+      investment.impact_metrics) {
+    score += 0.8;
+    reasons.push(`Provides measurable impact metrics`);
   }
 
   if (score === 0) {
     return null;
   }
 
-  return { investment, score, reasons };
+  return { 
+    investment, 
+    score: Math.round(score * 10) / 10, // Round to 1 decimal place
+    reasons,
+    warnings: warnings.length > 0 ? warnings : undefined
+  };
 };
 
-const rankInvestmentMatches = (session, universe, limit = 3) =>
-  ensureArray(universe)
+const rankInvestmentMatches = (session, universe, limit = 3) => {
+  const matches = ensureArray(universe)
     .map((item) => evaluateInvestmentMatch(session, item))
-    .filter(Boolean)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+    .filter(Boolean);
 
-const summariseInvestmentMatch = ({ investment, reasons }) => {
+  // Enhanced sorting with tie-breaking
+  return matches
+    .sort((a, b) => {
+      // Primary sort by score
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+      
+      // Tie-breaker 1: Prefer investments with fewer warnings
+      const aWarnings = a.warnings?.length || 0;
+      const bWarnings = b.warnings?.length || 0;
+      if (aWarnings !== bWarnings) {
+        return aWarnings - bWarnings;
+      }
+      
+      // Tie-breaker 2: Prefer lower cost investments
+      const getCost = (investment) => {
+        const chargeMatch = investment.charges?.match(/(\d+\.?\d*)%/);
+        return chargeMatch ? parseFloat(chargeMatch[1]) : 999;
+      };
+      
+      const aCost = getCost(a.investment);
+      const bCost = getCost(b.investment);
+      if (aCost !== bCost) {
+        return aCost - bCost;
+      }
+      
+      // Tie-breaker 3: Prefer larger, more established funds
+      const aSize = a.investment.fund_size || 0;
+      const bSize = b.investment.fund_size || 0;
+      return bSize - aSize;
+    })
+    .slice(0, limit);
+};
+
+const summariseInvestmentMatch = ({ investment, score, reasons, warnings }) => {
   const reasonText = reasons.length
     ? `${reasons.join("; ")}.`
     : "Matches the captured objectives and sustainability profile.";
+  
+  let warningText = "";
+  if (warnings && warnings.length > 0) {
+    warningText = ` ⚠️ Note: ${warnings.join("; ")}.`;
+  }
+  
+  const scoreText = score ? ` (Match score: ${score})` : "";
+  
+  return `**${investment.name}** (${investment.provider})${scoreText}\n${investment.summary}\n${reasonText}${warningText}`;
   return `• ${investment.name} (${investment.type}, ${investment.provider}, ${investment.charges}) – ${reasonText}`;
 };
 
@@ -335,13 +959,28 @@ const shouldTriggerInvestmentExplorer = (text) =>
   INVESTMENT_EXPLORER_PATTERNS.some((pattern) => pattern.test(text));
 
 const captureProgressSnapshot = (session) => {
+  // Enhanced session recovery with validation
+  if (!session || !session.context || typeof session.context !== 'object') {
+    console.warn('Invalid session structure in captureProgressSnapshot');
+    return {
+      stage: 'SEGMENT_A_EXPLANATION',
+      onboardingStep: null,
+      consentStep: null,
+      education: { acknowledged: false, summaryOffered: false, summarised: false },
+      options: { preferenceLevel: null, step: null },
+      confirmationAwaiting: false,
+      reportReady: false,
+      recoveryNeeded: true
+    };
+  }
+  
   const education = session.context.education ?? {};
   const options = session.context.options ?? {};
+  
   return {
-    stage: session.stage,
-    onboardingStep:
-      session.context.onboardingStep ?? null,
-    consentStep: session.context.consentStep ?? null,
+    stage: session.stage || 'SEGMENT_A_EXPLANATION',
+    onboardingStep: typeof session.context.onboardingStep === 'number' ? session.context.onboardingStep : null,
+    consentStep: typeof session.context.consentStep === 'number' ? session.context.consentStep : null,
     education: {
       acknowledged: Boolean(education.acknowledged),
       summaryOffered: Boolean(education.summaryOffered),
@@ -349,33 +988,46 @@ const captureProgressSnapshot = (session) => {
     },
     options: {
       preferenceLevel: options.preferenceLevel ?? null,
-      step: options.step ?? null
+      step: typeof options.step === 'number' ? options.step : null
     },
     confirmationAwaiting: Boolean(session.context.confirmationAwaiting),
-    reportReady: Boolean(session.context.reportReady)
+    reportReady: Boolean(session.context.reportReady),
+    recoveryNeeded: false
   };
 };
 
 const hasProgressed = (before, after) => {
-  if (!before) return true;
+  if (!before || !after) return true;
+  
+  // Handle recovery scenarios
+  if (before.recoveryNeeded || after.recoveryNeeded) return true;
+  
   if (before.stage !== after.stage) return true;
   if (before.onboardingStep !== after.onboardingStep) return true;
   if (before.consentStep !== after.consentStep) return true;
   if (before.confirmationAwaiting !== after.confirmationAwaiting) return true;
   if (before.reportReady !== after.reportReady) return true;
-  if (
-    before.education.acknowledged !== after.education.acknowledged ||
-    before.education.summaryOffered !== after.education.summaryOffered ||
-    before.education.summarised !== after.education.summarised
-  ) {
-    return true;
+  
+  // Safe comparison of nested objects
+  try {
+    if (
+      before.education.acknowledged !== after.education.acknowledged ||
+      before.education.summaryOffered !== after.education.summaryOffered ||
+      before.education.summarised !== after.education.summarised
+    ) {
+      return true;
+    }
+    if (
+      before.options.preferenceLevel !== after.options.preferenceLevel ||
+      before.options.step !== after.options.step
+    ) {
+      return true;
+    }
+  } catch (error) {
+    console.warn('Error comparing progress snapshots:', error.message);
+    return true; // Assume progress to be safe
   }
-  if (
-    before.options.preferenceLevel !== after.options.preferenceLevel ||
-    before.options.step !== after.options.step
-  ) {
-    return true;
-  }
+  
   return false;
 };
 
@@ -448,52 +1100,102 @@ export const handleFreeFormQuery = async (
   text,
   additionalMessages = []
 ) => {
-  const trimmed = String(text ?? "").trim();
+  // Enhanced input validation and error handling
+  if (!session || !session.data || typeof session.data !== 'object') {
+    console.error('Invalid session structure in handleFreeFormQuery');
+    return {
+      messages: ["I'm experiencing technical difficulties. Please try again or contact support."]
+    };
+  }
+  
+  const trimmed = sanitizeInput(String(text ?? ""));
   if (!trimmed) {
     return {
       messages: Array.isArray(additionalMessages) ? additionalMessages : []
     };
   }
 
-  const history = buildChatHistory(session);
-  const messages = [
-    {
-      role: "system",
-      content: `${COMPLIANCE_SYSTEM_PROMPT}\n\n${summariseSessionForLLM(session)}`
-    },
-    ...history,
-    { role: "user", content: trimmed }
-  ];
+  try {
+    const history = buildChatHistory(session);
+    const sessionSummary = summariseSessionForLLM(session);
+    
+    const messages = [
+      {
+        role: "system",
+        content: `${COMPLIANCE_SYSTEM_PROMPT}\n\n${sessionSummary}`
+      },
+      ...history,
+      { role: "user", content: trimmed }
+    ];
 
-  const aiPayload = await callComplianceResponder({ messages });
-  if (!aiPayload || typeof aiPayload.reply !== "string") {
-    throw new Error("Compliance assistant returned an unexpected payload");
-  }
+    const aiPayload = await callComplianceResponder({ messages });
+    
+    // Enhanced validation of AI response
+    if (!aiPayload || typeof aiPayload !== 'object') {
+      throw new Error("Compliance assistant returned invalid response structure");
+    }
+    
+    if (typeof aiPayload.reply !== "string" || !aiPayload.reply.trim()) {
+      throw new Error("Compliance assistant returned empty or invalid reply");
+    }
 
-  const compliance = aiPayload.compliance ?? {};
-  persistComplianceData(session, compliance);
+    const compliance = aiPayload.compliance ?? {};
+    persistComplianceData(session, compliance);
 
-  appendEvent(session, {
-    id: randomUUID(),
-    sessionId: session.id,
-    author: "assistant",
-    type: "message",
-    content: {
-      text: aiPayload.reply,
-      source: "openai",
+    // Safe event appending with error handling
+    try {
+      appendEvent(session, {
+        id: randomUUID(),
+        sessionId: session.id,
+        author: "assistant",
+        type: "message",
+        content: {
+          text: aiPayload.reply,
+          source: "openai",
+          compliance
+        },
+        createdAt: new Date().toISOString()
+      });
+    } catch (eventError) {
+      console.warn('Failed to append event:', eventError.message);
+      // Continue without failing the entire operation
+    }
+
+    const tail = Array.isArray(additionalMessages)
+      ? additionalMessages.filter((item) => typeof item === "string" && item.trim())
+      : [];
+
+    return {
+      messages: [aiPayload.reply, ...tail],
       compliance
-    },
-    createdAt: new Date().toISOString()
-  });
-
-  const tail = Array.isArray(additionalMessages)
-    ? additionalMessages.filter((item) => typeof item === "string" && item.trim())
-    : [];
-
-  return {
-    messages: [aiPayload.reply, ...tail],
-    compliance
-  };
+    };
+    
+  } catch (error) {
+    console.error('Error in handleFreeFormQuery:', error.message);
+    
+    // Graceful fallback when OpenAI service is unavailable
+    const fallbackMessage = "I'm unable to process that question right now due to a technical issue. " +
+      "An advisor will review your query and follow up with you directly.";
+    
+    // Log the failed query for advisor review
+    try {
+      appendSessionArrayEntry(session, "extra_questions", 
+        `Failed query (${new Date().toISOString()}): ${trimmed}`);
+      appendAdditionalNote(session, 
+        `Technical error processing query: ${error.message}`);
+    } catch (logError) {
+      console.warn('Failed to log error details:', logError.message);
+    }
+    
+    const tail = Array.isArray(additionalMessages)
+      ? additionalMessages.filter((item) => typeof item === "string" && item.trim())
+      : [];
+    
+    return {
+      messages: [fallbackMessage, ...tail],
+      error: true
+    };
+  }
 };
 
 const removeTrailingQuestionMark = (question = "") => {
@@ -550,36 +1252,39 @@ const buildResumePrompt = (session) => {
 };
 
 const getComplianceRationale = (session) => {
+  // Create audit entry for compliance rationale request
+  createComplianceAuditEntry(session, 'compliance_rationale_requested', {
+    stage: session.stage,
+    applicable_rules: ['Consumer Duty', 'COBS 9A', 'FCA SDR']
+  });
+
   if (session.context?.requireRiskOverride) {
-    return COMPLIANCE_REASONS.SEGMENT_B_ONBOARDING.risk_override;
+    const complianceInfo = ENHANCED_COMPLIANCE_REASONS.SEGMENT_B_ONBOARDING.risk_override;
+    return typeof complianceInfo === 'object' ? complianceInfo.reason : complianceInfo;
   }
 
-  const reasons = COMPLIANCE_REASONS[session.stage];
+  const reasons = ENHANCED_COMPLIANCE_REASONS[session.stage];
   if (!reasons) {
     return "I ask so we can keep the conversation compliant with the FCA’s Consumer Duty and SDR requirements.";
   }
 
   if (session.stage === "SEGMENT_D_EDUCATION") {
     const education = session.context.education ?? {};
-    if (!education.acknowledged) {
-      return reasons.acknowledgement ?? reasons.summary;
-    }
-    if (education.summaryOffered && !education.summarised) {
-      return reasons.summary;
-    }
+    const reasonKey = !education.acknowledged ? 'acknowledgement' : 'summary';
+    const complianceInfo = reasons[reasonKey];
+    return typeof complianceInfo === 'object' ? complianceInfo.reason : complianceInfo;
   }
 
   if (session.stage === "SEGMENT_E_OPTIONS") {
     const options = session.context.options ?? {};
-    if (!options.preferenceLevel) {
-      return reasons.preferenceLevel;
-    }
-    const step = options.step ?? 1;
-    return reasons[step] ?? reasons.preferenceLevel;
+    const reasonKey = !options.preferenceLevel ? 'preferenceLevel' : (options.step ?? 1);
+    const complianceInfo = reasons[reasonKey];
+    return typeof complianceInfo === 'object' ? complianceInfo.reason : complianceInfo;
   }
 
   if (session.stage === "SEGMENT_F_CONFIRMATION") {
-    return reasons[0];
+    const complianceInfo = reasons[0];
+    return typeof complianceInfo === 'object' ? complianceInfo.reason : complianceInfo;
   }
 
   const stepKey = session.stage === "SEGMENT_B_ONBOARDING"
@@ -602,6 +1307,9 @@ const logEducationalRequest = (session, text, moduleTitle) => {
   const entry = `Answered: ${moduleTitle} ("${text.trim()}")`;
   appendSessionArrayEntry(session, "educational_requests", entry);
   appendAdditionalNote(session, `${moduleTitle} summary shared.`);
+  
+  // Enhanced educational progress tracking
+  trackEducationalProgress(session, moduleTitle, 'summary_provided');
 };
 
 const logExtraQuestion = (session, text) => {
@@ -610,13 +1318,28 @@ const logExtraQuestion = (session, text) => {
   appendAdditionalNote(session, `Explained compliance rationale for "${text.trim()}".`);
 };
 
+// Enhanced investment exploration with comprehensive logging and advisor integration
 const handleInvestmentExplorer = (session, text) => {
   if (!shouldTriggerInvestmentExplorer(text)) {
     return null;
   }
 
+  // Determine query type for better categorization
+  const queryType = categorizeInvestmentQuery(text);
+
   if (!hasPreferenceProfile(session)) {
     const resumePrompt = buildResumePrompt(session);
+    
+    // Log incomplete exploration attempt
+    appendInvestmentResearchLog(session, {
+      at: new Date().toISOString(),
+      query: text,
+      query_type: queryType,
+      authorised_matches: [],
+      alternative_matches: [],
+      incomplete_reason: 'missing_preferences'
+    });
+    
     return {
       messages: [
         "Once we've captured your sustainability preferences I can search our authorised investment list for matches.",
@@ -625,55 +1348,146 @@ const handleInvestmentExplorer = (session, text) => {
     };
   }
 
+  // Perform enhanced investment matching
   const authorisedMatches = rankInvestmentMatches(session, AUTHORIZED_INVESTMENTS);
   const alternativeMatches = rankInvestmentMatches(session, MARKET_ALTERNATIVES);
+  
+  // Create investment recommendation workflow entry
+  const recommendationWorkflow = {
+    id: randomUUID(),
+    created_at: new Date().toISOString(),
+    client_query: text,
+    query_type: queryType,
+    client_profile_snapshot: {
+      objectives: session.data?.client_profile?.objectives,
+      risk_tolerance: session.data?.client_profile?.risk_tolerance,
+      capacity_for_loss: session.data?.client_profile?.capacity_for_loss,
+      horizon_years: session.data?.client_profile?.horizon_years
+    },
+    sustainability_preferences_snapshot: {
+      preference_level: session.data?.sustainability_preferences?.preference_level,
+      labels_interest: session.data?.sustainability_preferences?.labels_interest || [],
+      themes: session.data?.sustainability_preferences?.themes || [],
+      exclusions: session.data?.sustainability_preferences?.exclusions || []
+    },
+    search_results: {
+      authorised_matches: authorisedMatches.map(match => ({
+        investment_id: match.investment.id,
+        investment_name: match.investment.name,
+        score: match.score,
+        reasons: match.reasons,
+        warnings: match.warnings
+      })),
+      alternative_matches: alternativeMatches.map(match => ({
+        investment_id: match.investment.id,
+        investment_name: match.investment.name,
+        score: match.score,
+        reasons: match.reasons,
+        warnings: match.warnings
+      }))
+    },
+    advisor_review_required: true,
+    status: 'pending_advisor_review'
+  };
+  
+  // Store recommendation workflow
+  if (!session.data.investment_recommendations) {
+    session.data.investment_recommendations = [];
+  }
+  if (session.data.investment_recommendations.length < 20) {
+    session.data.investment_recommendations.push(recommendationWorkflow);
+  }
 
   if (authorisedMatches.length === 0 && alternativeMatches.length === 0) {
     const resumePrompt = buildResumePrompt(session);
+    
+    // Enhanced logging for no matches scenario
     appendInvestmentResearchLog(session, {
       at: new Date().toISOString(),
       query: text,
+      query_type: queryType,
       authorised_matches: [],
-      alternative_matches: []
+      alternative_matches: [],
+      no_matches_reason: 'criteria_too_restrictive'
     });
+    
     appendAdditionalNote(
       session,
-      `Investment explorer run for "${text}" but no aligned investments were found.`
+      `Investment explorer run for "${text}" (${queryType}) but no aligned investments were found. Advisor review flagged.`
     );
+    
     return {
       messages: [
-        "I couldn't find any close matches yet. I'll flag this for an adviser to review manually.",
+        "I couldn't find any close matches for your specific requirements. This suggests your preferences may need a bespoke investment solution.",
+        "I've flagged this for an adviser to review manually and explore additional options outside our standard universe.",
         resumePrompt
       ]
     };
   }
 
+  // Enhanced logging with detailed match information
   appendInvestmentResearchLog(session, {
     at: new Date().toISOString(),
     query: text,
+    query_type: queryType,
     authorised_matches: authorisedMatches.map((match) => match.investment.id),
-    alternative_matches: alternativeMatches.map((match) => match.investment.id)
+    alternative_matches: alternativeMatches.map((match) => match.investment.id),
+    match_scores: {
+      authorised: authorisedMatches.map(m => ({ id: m.investment.id, score: m.score })),
+      alternatives: alternativeMatches.map(m => ({ id: m.investment.id, score: m.score }))
+    },
+    recommendation_workflow_id: recommendationWorkflow.id
   });
+  
   appendAdditionalNote(
     session,
-    `Investment explorer run for "${text}" with ${authorisedMatches.length} authorised match(es).`
+    `Investment explorer run for "${text}" (${queryType}) with ${authorisedMatches.length} authorised and ${alternativeMatches.length} alternative match(es). Recommendation workflow ${recommendationWorkflow.id} created.`
   );
 
   const authorisedSummary = authorisedMatches.length
-    ? authorisedMatches.map(summariseInvestmentMatch).join("\n")
+    ? authorisedMatches.map(summariseInvestmentMatch).join("\n\n")
     : "No on-panel investments matched these preferences. I'll flag this for adviser review.";
+    
   const alternativeSummary = alternativeMatches.length
-    ? alternativeMatches.map(summariseInvestmentMatch).join("\n")
+    ? alternativeMatches.map(summariseInvestmentMatch).join("\n\n")
     : "The wider market scan did not surface close alternatives right now.";
+    
   const resumePrompt = buildResumePrompt(session);
 
-  return {
-    messages: [
-      `Here are on-panel investments that align with your preferences (adviser sign-off still required):\n${authorisedSummary}`,
-      `Market scan alternatives meeting similar criteria (not currently on our panel):\n${alternativeSummary}`,
-      `Any selection will need an adviser recommendation before you invest. ${resumePrompt}`
-    ]
-  };
+  const messages = [
+    `Here are on-panel investments that align with your preferences (adviser sign-off still required):\n\n${authorisedSummary}`,
+    alternativeMatches.length > 0 
+      ? `Market scan alternatives meeting similar criteria (not currently on our panel):\n\n${alternativeSummary}`
+      : "The wider market scan did not surface close alternatives right now.",
+    `Any selection will need an adviser recommendation before you invest. I've created a recommendation workflow (ID: ${recommendationWorkflow.id.slice(0, 8)}) for review. ${resumePrompt}`
+  ];
+
+  return { messages };
+};
+
+// Helper function to categorize investment queries
+const categorizeInvestmentQuery = (text) => {
+  const normalizedText = normalise(text);
+  
+  if (normalizedText.includes('climate') || normalizedText.includes('environment')) {
+    return 'climate_focused';
+  } else if (normalizedText.includes('social') || normalizedText.includes('governance')) {
+    return 'social_governance_focused';
+  } else if (normalizedText.includes('impact') || normalizedText.includes('outcome')) {
+    return 'impact_focused';
+  } else if (normalizedText.includes('exclude') || normalizedText.includes('avoid')) {
+    return 'exclusion_focused';
+  } else if (normalizedText.includes('income') || normalizedText.includes('dividend')) {
+    return 'income_focused';
+  } else if (normalizedText.includes('growth') || normalizedText.includes('capital')) {
+    return 'growth_focused';
+  } else if (normalizedText.includes('risk') || normalizedText.includes('volatility')) {
+    return 'risk_focused';
+  } else if (normalizedText.includes('cost') || normalizedText.includes('fee') || normalizedText.includes('charge')) {
+    return 'cost_focused';
+  } else {
+    return 'general_exploration';
+  }
 };
 
 const handleDetours = (session, text) => {
@@ -688,13 +1502,35 @@ const handleDetours = (session, text) => {
   if (module) {
     logEducationalRequest(session, text, module.title);
     const resumePrompt = buildResumePrompt(session);
-    return {
-      messages: [
-        `Happy to help. ${module.summary}`,
-        `Would you like the full ${module.title} explainer PDF?`,
-        resumePrompt
-      ]
-    };
+    
+    // Check for requests for detailed explanation or PDF
+    const wantsDetailed = /detailed|more detail|explain more|full explanation/i.test(text);
+    const wantsPdf = /pdf|document|download|full.*explainer/i.test(text);
+    
+    const messages = [`Happy to help. ${module.summary}`];
+    
+    if (wantsDetailed && module.detailed_explanation) {
+      messages.push(`Here's more detail: ${module.detailed_explanation}`);
+      trackEducationalProgress(session, module.title, 'detailed_explanation_provided');
+    }
+    
+    if (module.pdf_available) {
+      if (wantsPdf) {
+        messages.push(`I've prepared the ${module.title} PDF explainer for download. An advisor will attach it to your session.`);
+        trackPdfDownload(session, module.title, 'detailed_explanation');
+      } else {
+        messages.push(`Would you like the full ${module.title} explainer PDF?`);
+      }
+    }
+    
+    // Add comprehension check if available
+    if (module.comprehension_check && !wantsPdf) {
+      messages.push(`Quick check: ${module.comprehension_check}`);
+    }
+    
+    messages.push(resumePrompt);
+    
+    return { messages };
   }
 
   if (whyNeedPattern.test(text)) {
@@ -712,21 +1548,35 @@ const handleDetours = (session, text) => {
   return null;
 };
 
-const extractHorizonYears = (text) => {
-  const match = text.match(/(\d{1,3})\s*(years?|yrs?)/i);
-  if (match) {
-    const value = Number.parseInt(match[1], 10);
-    if (Number.isInteger(value) && value > 0) {
-      return value;
-    }
+export const extractHorizonYears = (text) => {
+  if (typeof text !== 'string') {
+    return null;
   }
-  const trimmed = text.trim();
-  if (/^\d+$/.test(trimmed)) {
-    const numeric = Number.parseInt(trimmed, 10);
-    if (Number.isInteger(numeric) && numeric > 0) {
-      return numeric;
+  
+  const sanitized = sanitizeInput(text);
+  if (!sanitized) return null;
+  
+  try {
+    const match = sanitized.match(/(\d{1,3})\s*(years?|yrs?)/i);
+    if (match) {
+      const value = Number.parseInt(match[1], 10);
+      // Validate reasonable investment horizon (1-100 years)
+      if (Number.isInteger(value) && value > 0 && value <= 100) {
+        return value;
+      }
     }
+    
+    const trimmed = sanitized.trim();
+    if (/^\d+$/.test(trimmed)) {
+      const numeric = Number.parseInt(trimmed, 10);
+      if (Number.isInteger(numeric) && numeric > 0 && numeric <= 100) {
+        return numeric;
+      }
+    }
+  } catch (error) {
+    console.warn('Error extracting horizon years:', error.message);
   }
+  
   return null;
 };
 
@@ -740,42 +1590,71 @@ const riskWordMap = {
   "very high": 7
 };
 
-const extractRiskTolerance = (text) => {
-  const direct = text.match(/risk(?: tolerance| level)?[^0-9]*([1-7])/i);
-  if (direct) {
-    return Number.parseInt(direct[1], 10);
+export const extractRiskTolerance = (text) => {
+  if (typeof text !== 'string') {
+    return null;
   }
+  
+  const sanitized = sanitizeInput(text);
+  if (!sanitized) return null;
+  
+  try {
+    const direct = sanitized.match(/risk(?: tolerance| level)?[^0-9]*([1-7])/i);
+    if (direct) {
+      const value = Number.parseInt(direct[1], 10);
+      return (value >= 1 && value <= 7) ? value : null;
+    }
 
-  if (/^\s*[1-7]\s*$/.test(text)) {
-    return Number.parseInt(text.trim(), 10);
-  }
+    if (/^\s*[1-7]\s*$/.test(sanitized)) {
+      const value = Number.parseInt(sanitized.trim(), 10);
+      return (value >= 1 && value <= 7) ? value : null;
+    }
 
-  const wordMatch = text.match(/(very\s+low|very\s+high|low|medium|moderate|balanced|high)\s+risk/i);
-  if (wordMatch) {
-    return riskWordMap[wordMatch[1].toLowerCase()] ?? null;
-  }
+    const wordMatch = sanitized.match(/(very\s+low|very\s+high|low|medium|moderate|balanced|high)\s+risk/i);
+    if (wordMatch) {
+      const mapped = riskWordMap[wordMatch[1].toLowerCase()];
+      return (mapped >= 1 && mapped <= 7) ? mapped : null;
+    }
 
-  const trailingMatch = text.match(/risk[^a-z]*(low|medium|moderate|balanced|high|very\s+low|very\s+high)/i);
-  if (trailingMatch) {
-    return riskWordMap[trailingMatch[1].toLowerCase()] ?? null;
+    const trailingMatch = sanitized.match(/risk[^a-z]*(low|medium|moderate|balanced|high|very\s+low|very\s+high)/i);
+    if (trailingMatch) {
+      const mapped = riskWordMap[trailingMatch[1].toLowerCase()];
+      return (mapped >= 1 && mapped <= 7) ? mapped : null;
+    }
+  } catch (error) {
+    console.warn('Error extracting risk tolerance:', error.message);
   }
 
   return null;
 };
 
-const extractCapacityForLoss = (text) => {
-  if (/^\s*(low|medium|high)\s*$/i.test(text)) {
-    return text.trim().toLowerCase();
+export const extractCapacityForLoss = (text) => {
+  if (typeof text !== 'string') {
+    return null;
   }
+  
+  const sanitized = sanitizeInput(text);
+  if (!sanitized) return null;
+  
+  try {
+    if (/^\s*(low|medium|high)\s*$/i.test(sanitized)) {
+      const value = sanitized.trim().toLowerCase();
+      return ['low', 'medium', 'high'].includes(value) ? value : null;
+    }
 
-  const prefix = text.match(/(low|medium|high)\s+(capacity|capacity for loss|loss capacity|loss tolerance)/i);
-  if (prefix) {
-    return prefix[1].toLowerCase();
-  }
+    const prefix = sanitized.match(/(low|medium|high)\s+(capacity|capacity for loss|loss capacity|loss tolerance)/i);
+    if (prefix) {
+      const value = prefix[1].toLowerCase();
+      return ['low', 'medium', 'high'].includes(value) ? value : null;
+    }
 
-  const suffix = text.match(/(capacity for loss|loss capacity|loss tolerance)[^a-z]*(low|medium|high)/i);
-  if (suffix) {
-    return suffix[2].toLowerCase();
+    const suffix = sanitized.match(/(capacity for loss|loss capacity|loss tolerance)[^a-z]*(low|medium|high)/i);
+    if (suffix) {
+      const value = suffix[2].toLowerCase();
+      return ['low', 'medium', 'high'].includes(value) ? value : null;
+    }
+  } catch (error) {
+    console.warn('Error extracting capacity for loss:', error.message);
   }
 
   return null;
@@ -800,6 +1679,16 @@ const handleCapacitySelection = (session, capacity) => {
         triggered_at: new Date().toISOString(),
         confirmed_at: null
       });
+      
+      // Notify WebSocket monitor of guardrail trigger
+      if (sessionMonitor) {
+        sessionMonitor.notifyGuardrailTrigger(session.id, 'risk_capacity_override', {
+          message: `Client has high risk tolerance (${profile.risk_tolerance}) but low capacity for loss`,
+          riskTolerance: profile.risk_tolerance,
+          capacityForLoss: capacity,
+          requiresConfirmation: true
+        });
+      }
     }
     responses.push(
       "Because you’ve chosen a higher risk tolerance with a low capacity for loss, please confirm you still wish to proceed."
@@ -828,6 +1717,16 @@ const handleRiskSelection = (session, risk, originalText) => {
         triggered_at: new Date().toISOString(),
         notes: "High risk with short horizon"
       });
+      
+      // Notify WebSocket monitor of guardrail trigger
+      if (sessionMonitor) {
+        sessionMonitor.notifyGuardrailTrigger(session.id, 'risk_horizon_warning', {
+          message: `Client has high risk tolerance (${risk}) with short investment horizon (${profile.horizon_years} years)`,
+          riskTolerance: risk,
+          horizonYears: profile.horizon_years,
+          requiresConfirmation: false
+        });
+      }
     }
     responses.push(
       "⚠️ You’ve chosen a higher risk level with a shorter time horizon. I’ll flag this so your adviser can make sure it remains suitable."
@@ -872,6 +1771,60 @@ const stageResponse = (session, stage, additionalMessages = []) => {
 
 const moveToStage = (session, stage, extraMessages = []) => {
   const messages = stageResponse(session, stage, extraMessages);
+  
+  // Add compliance validation checkpoints when moving between stages
+  createComplianceAuditEntry(session, 'stage_transition', {
+    from_stage: session.stage,
+    to_stage: stage,
+    applicable_rules: ['Consumer Duty', 'COBS 9A'],
+    compliance_status: 'compliant'
+  });
+  
+  // Validate compliance checkpoints based on stage
+  if (stage === 'SEGMENT_C_CONSENT') {
+    validateComplianceCheckpoint(session, 'suitability_information_complete');
+  } else if (stage === 'SEGMENT_D_EDUCATION') {
+    validateComplianceCheckpoint(session, 'consent_obtained');
+  } else if (stage === 'SEGMENT_E_OPTIONS') {
+    validateComplianceCheckpoint(session, 'education_delivered');
+  } else if (stage === 'SEGMENT_F_CONFIRMATION') {
+    validateComplianceCheckpoint(session, 'sustainability_preferences_captured');
+  } else if (stage === 'SEGMENT_G_REPORT') {
+    validateComplianceCheckpoint(session, 'guardrails_checked');
+    
+    // Run enhanced guardrail evaluation before report generation
+    const enhancedGuardrailResults = evaluateEnhancedGuardrails(session);
+    
+    // Store enhanced guardrail results in session
+    if (!session.data.enhanced_guardrails) {
+      session.data.enhanced_guardrails = {};
+    }
+    session.data.enhanced_guardrails.last_evaluation = enhancedGuardrailResults;
+    
+    // If critical issues found, prevent report generation
+    if (enhancedGuardrailResults.overall_risk_level === 'critical') {
+      return {
+        reply: "I've identified some critical compliance issues that need to be addressed before we can generate your report. An advisor will review your session and contact you shortly to resolve these matters.",
+        stage: session.stage, // Stay in current stage
+        requiresAdvisorReview: true,
+        criticalIssues: enhancedGuardrailResults.required_actions
+      };
+    }
+    
+    // If high risk, add warning to report
+    if (enhancedGuardrailResults.overall_risk_level === 'high') {
+      if (!session.data.advisor_notes) {
+        session.data.advisor_notes = [];
+      }
+      session.data.advisor_notes.push({
+        type: 'high_risk_warning',
+        timestamp: new Date().toISOString(),
+        message: 'High risk level detected during enhanced guardrail evaluation',
+        details: enhancedGuardrailResults.required_actions
+      });
+    }
+  }
+  
   saveSession(session);
   return { messages };
 };
@@ -1283,6 +2236,12 @@ const handleStructuredOnboarding = (session, content) => {
   }
 
   if (profile.risk_tolerance >= 5 && profile.capacity_for_loss === "low") {
+    // Perform enhanced risk assessment
+    const riskAssessment = performEnhancedRiskAssessment(session);
+    
+    // Store assessment results
+    session.data.current_risk_assessment = riskAssessment;
+    
     if (!content?.confirm_override) {
       session.context.requireRiskOverride = true;
       return {
@@ -1583,6 +2542,23 @@ const handleOptions = (session, text) => {
     prefs.preference_level = choice;
     optionsContext.preferenceLevel = choice;
     session.context.options = optionsContext;
+    
+    // Perform enhanced risk assessment when sustainability preferences are set
+    if (choice !== 'none') {
+      const riskAssessment = performEnhancedRiskAssessment(session);
+      
+      // Check for sustainability-specific guardrails
+      if (riskAssessment.criticalIssues.length > 0) {
+        // Add warning about critical sustainability issues
+        session.data.sustainability_warnings = session.data.sustainability_warnings || [];
+        session.data.sustainability_warnings.push({
+          timestamp: new Date().toISOString(),
+          type: 'critical_guardrail_trigger',
+          issues: riskAssessment.criticalIssues.map(issue => issue.description),
+          recommendations: riskAssessment.recommendations
+        });
+      }
+    }
 
     if (choice === "none") {
       prefs.labels_interest = [];
@@ -2075,6 +3051,340 @@ export const handleAssistantMessage = (session, content) => {
   return { messages: [] };
 };
 
+// Enhanced multi-modal input handler
+export const handleMultiModalInput = async (session, input) => {
+  try {
+    const processedInput = processMultiModalInput(session, input);
+    
+    if (processedInput.error) {
+      return {
+        messages: [processedInput.error],
+        error: true
+      };
+    }
+
+    const { processedInput: processed } = processedInput;
+    
+    // Route to appropriate handler based on input type
+    switch (processed.type) {
+      case 'text':
+        return await handleEnhancedClientTurn(session, processed.content);
+      case 'structured':
+        return await handleStructuredInput(session, processed.data);
+      case 'guided':
+        return await handleGuidedInput(session, processed.selection);
+      case 'extracted_structured':
+        return await handleExtractedStructuredInput(session, processed);
+      default:
+        return { messages: ["Unsupported input type"], error: true };
+    }
+  } catch (error) {
+    console.error('Error in handleMultiModalInput:', error);
+    return {
+      messages: ["I encountered an error processing your input. Please try again."],
+      error: true
+    };
+  }
+};
+
+// Enhanced client turn handler with context management and personalization
+const handleEnhancedClientTurn = async (session, text) => {
+  const trimmed = String(text ?? "").trim();
+  
+  // Initialize context stack if needed
+  const contextStack = new ConversationContextStack(session);
+  
+  // Perform comprehensive NLP analysis
+  const nlpAnalysis = performComprehensiveNLP(trimmed, {
+    stage: session.stage,
+    sophistication: session.context?.clientSophistication?.level,
+    conversationHistory: session.events?.slice(-5) || []
+  });
+  
+  // Analyze sentiment and track engagement (legacy support)
+  const sentimentAnalysis = analyzeSentiment(trimmed, session.events);
+  const engagementLevel = trackClientEngagement(session, trimmed, sentimentAnalysis);
+  
+  // Adapt conversation style based on comprehensive analysis
+  const conversationAdaptations = {
+    ...adaptConversationStyle(session, engagementLevel, sentimentAnalysis),
+    ...nlpAnalysis.responseAdaptations
+  };
+  
+  // Store NLP analysis in session for future reference
+  if (!session.data.analytics) session.data.analytics = {};
+  if (!session.data.analytics.nlp_history) session.data.analytics.nlp_history = [];
+  
+  session.data.analytics.nlp_history.push({
+    timestamp: new Date().toISOString(),
+    text: trimmed,
+    analysis: nlpAnalysis,
+    stage: session.stage
+  });
+  
+  // Keep only last 20 NLP analyses to prevent memory bloat
+  if (session.data.analytics.nlp_history.length > 20) {
+    session.data.analytics.nlp_history = session.data.analytics.nlp_history.slice(-20);
+  }
+
+  // Track personalization analytics
+  trackAnalyticsEvent(session, ANALYTICS_EVENT_TYPES.PERSONALIZATION_APPLIED, {
+    adaptations: conversationAdaptations,
+    nlpIntent: nlpAnalysis.intent?.intent,
+    languageComplexity: nlpAnalysis.languageComplexity?.complexity,
+    engagementLevel
+  });
+  
+  // Detect client sophistication and update input preferences
+  const sophisticationLevel = detectClientSophistication(session);
+  if (!session.context.clientSophistication || 
+      session.context.clientSophistication.level !== sophisticationLevel) {
+    session.context.clientSophistication = {
+      level: sophisticationLevel,
+      lastUpdated: new Date().toISOString(),
+      inputMode: session.context.clientSophistication?.inputMode || INPUT_MODES.FREE_TEXT,
+      branchingStrategy: session.context.clientSophistication?.branchingStrategy || 'adaptive'
+    };
+  }
+
+  // Handle detours with context preservation
+  const detour = handleDetours(session, trimmed);
+  if (detour) {
+    // Push detour context onto stack
+    const detourType = shouldTriggerInvestmentExplorer(trimmed) 
+      ? CONTEXT_TYPES.INVESTMENT_EXPLORATION 
+      : findEducationModule(trimmed) 
+        ? CONTEXT_TYPES.EDUCATIONAL 
+        : CONTEXT_TYPES.COMPLIANCE_QUERY;
+    
+    contextStack.pushContext(detourType, { query: trimmed });
+    
+    // Track detour analytics
+    trackAnalyticsEvent(session, ANALYTICS_EVENT_TYPES.DETOUR_TAKEN, {
+      detourType,
+      query: trimmed,
+      intent: nlpAnalysis.intent?.intent,
+      contextDepth: contextStack.getContextDepth()
+    });
+    
+    // Personalize detour response using enhanced NLP
+    const personalizedDetour = {
+      ...detour,
+      messages: detour.messages.map(msg => {
+        const legacyPersonalized = personalizeResponse(msg, conversationAdaptations, session);
+        return personalizeResponseWithNLP(legacyPersonalized, conversationAdaptations, nlpAnalysis);
+      })
+    };
+    
+    saveSession(session);
+    return personalizedDetour;
+  }
+
+  const stageHandlers = {
+    SEGMENT_A_EXPLANATION: handleExplanation,
+    SEGMENT_B_ONBOARDING: handleOnboarding,
+    SEGMENT_C_CONSENT: handleConsent,
+    SEGMENT_D_EDUCATION: handleEducation,
+    SEGMENT_E_OPTIONS: handleOptions,
+    SEGMENT_F_CONFIRMATION: handleConfirmation,
+    SEGMENT_G_REPORT: handleReport,
+    SEGMENT_H_DELIVERY: handleDelivery,
+    SEGMENT_COMPLETE: handleComplete
+  };
+
+  const handler = stageHandlers[session.stage] ?? (() => ({ messages: [] }));
+  const before = captureProgressSnapshot(session);
+  
+  let response;
+  try {
+    response = handler(session, trimmed);
+    
+    // Personalize stage handler response using enhanced NLP
+    if (response?.messages) {
+      response.messages = response.messages.map(msg => {
+        // Apply both legacy and enhanced personalization
+        const legacyPersonalized = personalizeResponse(msg, conversationAdaptations, session);
+        return personalizeResponseWithNLP(legacyPersonalized, conversationAdaptations, nlpAnalysis);
+      });
+    }
+  } catch (error) {
+    // Track error analytics
+    trackAnalyticsEvent(session, ANALYTICS_EVENT_TYPES.ERROR_ENCOUNTERED, {
+      errorType: 'handler_error',
+      errorMessage: error.message,
+      stage: session.stage,
+      intent: nlpAnalysis.intent?.intent
+    });
+
+    // Handle errors with conversation recovery
+    const recoveryResult = manageConversationRecovery(session, {
+      type: 'handler_error',
+      message: error.message,
+      action: 'stage_handling'
+    });
+    
+    // Track recovery attempt
+    trackAnalyticsEvent(session, ANALYTICS_EVENT_TYPES.RECOVERY_ATTEMPTED, {
+      recoveryStrategy: recoveryResult.recoveryStrategy.approach,
+      errorContext: 'stage_handling'
+    });
+    
+    response = {
+      messages: [recoveryResult.recoveryStrategy.message],
+      error: true,
+      recovery: recoveryResult.recoveryStrategy
+    };
+  }
+  
+  const after = captureProgressSnapshot(session);
+
+  const progressed = hasProgressed(before, after);
+  if (progressed || !trimmed) {
+    // Check if we should offer alternative input methods
+    if (shouldOfferAlternativeInput(session, session.context.inputAttempts || 0)) {
+      const suggestions = generateInputModeSuggestions(session);
+      if (suggestions.length > 0) {
+        response.inputSuggestions = suggestions;
+        response.messages = response.messages || [];
+        response.messages.push("Would you prefer to use a different input method? I can offer structured forms or guided selections.");
+      }
+    }
+    
+    saveSession(session);
+    return response;
+  }
+
+  let finalResponse;
+  try {
+    finalResponse = await handleFreeFormQuery(
+      session,
+      trimmed,
+      response?.messages ?? []
+    );
+    
+    // Personalize free-form response using enhanced NLP
+    if (finalResponse?.messages) {
+      finalResponse.messages = finalResponse.messages.map(msg => {
+        const legacyPersonalized = personalizeResponse(msg, conversationAdaptations, session);
+        return personalizeResponseWithNLP(legacyPersonalized, conversationAdaptations, nlpAnalysis);
+      });
+    }
+  } catch (error) {
+    // Handle free-form query errors with recovery
+    const recoveryResult = manageConversationRecovery(session, {
+      type: 'ai_service_error',
+      message: error.message,
+      action: 'free_form_query'
+    });
+    
+    const fallback = Array.isArray(response?.messages) ? response.messages : [];
+    finalResponse = {
+      messages: [
+        ...fallback,
+        recoveryResult.recoveryStrategy.message
+      ],
+      error: true,
+      recovery: recoveryResult.recoveryStrategy
+    };
+  }
+
+  saveSession(session);
+  return finalResponse;
+};
+
+// Handler for structured input data
+const handleStructuredInput = async (session, data) => {
+  const structuredHandlers = {
+    SEGMENT_A_EXPLANATION: handleStructuredExplanation,
+    SEGMENT_B_ONBOARDING: handleStructuredOnboarding,
+    SEGMENT_C_CONSENT: handleStructuredConsent,
+    SEGMENT_D_EDUCATION: handleStructuredEducation,
+    SEGMENT_E_OPTIONS: handleStructuredOptions,
+    SEGMENT_F_CONFIRMATION: handleStructuredConfirmation
+  };
+
+  const handler = structuredHandlers[session.stage];
+  if (handler) {
+    return handler(session, { ...data });
+  }
+
+  return { messages: ["Structured input not supported for this stage."] };
+};
+
+// Handler for guided selection input
+const handleGuidedInput = async (session, selection) => {
+  // Convert guided selection to appropriate format for current stage
+  const convertedInput = convertGuidedSelectionToStageInput(session, selection);
+  
+  if (convertedInput.type === 'text') {
+    return await handleEnhancedClientTurn(session, convertedInput.content);
+  } else if (convertedInput.type === 'structured') {
+    return await handleStructuredInput(session, convertedInput.data);
+  }
+
+  return { messages: ["Unable to process guided selection for this stage."] };
+};
+
+// Handler for extracted structured input from free text
+const handleExtractedStructuredInput = async (session, processed) => {
+  const { originalText, extractedData, extractionConfidence } = processed;
+  
+  if (extractionConfidence < 0.6) {
+    // Low confidence - fall back to text processing
+    return await handleEnhancedClientTurn(session, originalText);
+  }
+
+  // High confidence - use extracted structured data
+  const response = await handleStructuredInput(session, extractedData);
+  
+  // Add confirmation message about extraction
+  if (response.messages) {
+    response.messages.unshift(
+      `I extracted the following information from your message: ${Object.entries(extractedData)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(', ')}. Let me know if this looks correct.`
+    );
+  }
+
+  return response;
+};
+
+// Utility function to convert guided selections to stage-appropriate input
+const convertGuidedSelectionToStageInput = (session, selection) => {
+  const stage = session.stage;
+  
+  switch (stage) {
+    case 'SEGMENT_B_ONBOARDING':
+      return {
+        type: 'structured',
+        data: {
+          client_type: selection.clientType,
+          objectives: selection.objectives,
+          horizon_years: selection.horizonYears,
+          risk_tolerance: selection.riskTolerance,
+          capacity_for_loss: selection.capacityForLoss
+        }
+      };
+    
+    case 'SEGMENT_E_OPTIONS':
+      return {
+        type: 'structured',
+        data: {
+          preference_level: selection.preferenceLevel,
+          labels_interest: selection.labelsInterest,
+          themes: selection.themes,
+          exclusions: selection.exclusions
+        }
+      };
+    
+    default:
+      return {
+        type: 'text',
+        content: selection.textEquivalent || JSON.stringify(selection)
+      };
+  }
+};
+
 export const handleEvent = async (session, event) => {
   if (event.author === "client" && event.type === "message") {
     return handleClientTurn(session, event.content?.text ?? "");
@@ -2100,5 +3410,129 @@ export const handleEvent = async (session, event) => {
     }
   }
 
+  // Handle multi-modal input events
+  if (event.author === "client" && event.type === "multi_modal_input") {
+    return await handleMultiModalInput(session, event.content);
+  }
+
   return { messages: [] };
+};
+
+// Enhanced error handling and session recovery functions
+export const recoverSession = (session) => {
+  if (!session || typeof session !== 'object') {
+    console.error('Cannot recover null or invalid session');
+    return null;
+  }
+  
+  // Ensure basic session structure
+  session.data = session.data || {};
+  session.context = session.context || {};
+  session.stage = session.stage || 'SEGMENT_A_EXPLANATION';
+  session.events = session.events || [];
+  
+  // Ensure data structure
+  if (!session.data.client_profile) {
+    session.data.client_profile = {
+      client_type: "",
+      objectives: "",
+      horizon_years: null,
+      risk_tolerance: null,
+      capacity_for_loss: "",
+      liquidity_needs: "",
+      knowledge_experience: { summary: "", instruments: [], frequency: "", duration: "" },
+      financial_situation: { provided: false, income: null, assets: null, liabilities: null, notes: "" }
+    };
+  }
+  
+  if (!session.data.sustainability_preferences) {
+    session.data.sustainability_preferences = {
+      preference_level: "none",
+      labels_interest: [],
+      themes: [],
+      exclusions: [],
+      impact_goals: [],
+      engagement_importance: "",
+      reporting_frequency_pref: "none",
+      tradeoff_tolerance: "",
+      educ_pack_sent: false
+    };
+  }
+  
+  if (!session.data.consent) {
+    session.data.consent = {
+      data_processing: null,
+      e_delivery: null,
+      future_contact: { granted: null, purpose: "" }
+    };
+  }
+  
+  if (!session.data.audit) {
+    session.data.audit = {
+      events: [],
+      ip: null,
+      explanation_shown: false,
+      educ_pack_sent: false,
+      guardrail_triggers: [],
+      report_hash: null
+    };
+  }
+  
+  // Ensure context structure
+  if (!session.context.education) {
+    session.context.education = {
+      acknowledged: false,
+      summaryOffered: false,
+      summarised: false
+    };
+  }
+  
+  if (!session.context.options) {
+    session.context.options = {
+      preferenceLevel: null,
+      step: 0,
+      pendingExclusions: false,
+      pendingImpactDetails: false
+    };
+  }
+  
+  return session;
+};
+
+export const validateSessionStructure = (session) => {
+  if (!session || typeof session !== 'object') {
+    return { valid: false, error: 'Session is null or not an object' };
+  }
+  
+  const required = ['id', 'stage', 'data', 'context', 'events'];
+  for (const field of required) {
+    if (!(field in session)) {
+      return { valid: false, error: `Missing required field: ${field}` };
+    }
+  }
+  
+  if (typeof session.data !== 'object' || session.data === null) {
+    return { valid: false, error: 'Session data is not an object' };
+  }
+  
+  if (typeof session.context !== 'object' || session.context === null) {
+    return { valid: false, error: 'Session context is not an object' };
+  }
+  
+  if (!Array.isArray(session.events)) {
+    return { valid: false, error: 'Session events is not an array' };
+  }
+  
+  return { valid: true };
+};
+
+export const handleErrorWithFallback = (error, context, fallbackMessage) => {
+  console.error(`Error in ${context}:`, error.message);
+  
+  return {
+    messages: [fallbackMessage || "I encountered a technical issue. An advisor will follow up with you."],
+    error: true,
+    errorContext: context,
+    errorMessage: error.message
+  };
 };

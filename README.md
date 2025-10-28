@@ -1,116 +1,358 @@
-# UK-SRD-Compliance
+# ESG Client Interview Bot
 
-This repository now contains a dependency-free Node.js prototype of the SDR Preference
-Pathway chatbot. The goal is to make the workflow runnable on constrained
-machines (e.g. where `npm install` cannot reach the public registry) while still
-respecting the specification’s consent → education → preference capture
-progression. The conversation engine now reacts to user inputs, records answers
-into the canonical JSON structure, and generates a downloadable PDF summary once
-the client approves the draft.
+A Node.js-based conversational AI system that guides UK financial planning clients through compliant ESG investment interviews, ensuring adherence to FCA Consumer Duty, COBS 9A suitability requirements, and SDR (Sustainability Disclosure Requirements).
 
+## Features
 
-## Running the prototype
+- **8-Segment Conversation Flow**: Structured interview process from explanation to report delivery
+- **Regulatory Compliance**: Built-in COBS 9A validation and FCA Consumer Duty compliance
+- **ESG Education**: Comprehensive educational content on sustainable investing concepts
+- **Investment Matching**: Intelligent matching of client preferences to authorized investment universe
+- **PDF Report Generation**: Professional suitability reports with digital signatures
+- **Real-time Monitoring**: Comprehensive logging, metrics, and alerting
+- **Multi-modal Interface**: Support for both conversational and structured data input
 
-1. Ensure Node.js ≥ 18 is available (the environment already provides npm 11.6).
-2. Start the server:
-   ```bash
-   node server/server.js
-   ```
-3. Open <http://localhost:4000> in a browser to interact with the chat surface.
-   - The assistant walks through consent, client profile, informed-choice
-     acknowledgement, preference capture (allocations + SDG / ethical branches),
-     and preview/approval.
-   - After you type “approve”, the page reveals the generated report preview and
-     a PDF download link.
+## Quick Start
 
-### Configuring the compliance assistant
+**For local development and testing, see [QUICKSTART.md](QUICKSTART.md) for a 5-minute setup guide.**
 
-The free-form "Ask a question" button can either call OpenAI or fall back to a
-local stub for environments without external network access:
+### Prerequisites
 
-- Set `OPENAI_API_KEY` and (optionally) `OPENAI_MODEL` before starting the
-  server to enable live OpenAI completions.
-- Set `OPENAI_STUB=true` to bypass the OpenAI SDK entirely. The server will log
-  the user's free-form question for adviser review and return a placeholder
-  answer so the workflow continues.
-- If the OpenAI SDK is not installed, the server automatically switches to the
-  stub responder and records that the dependency is missing.
+- Node.js 18.0.0 or higher
+- npm 8.0.0 or higher
+- SQLite (included) or PostgreSQL for production
 
-When OpenAI rejects a request with `401 Unauthorized`, the responder also
-switches to the stub unless `OPENAI_STRICT=true` is set.
-
-### Quick API smoke test
-
-From a second terminal you can hit the same running server with `curl`:
+### Local Development Setup
 
 ```bash
-# health check
-curl -s http://localhost:4000/api/health
+# One-command setup
+npm run setup:dev
 
-# start a new advice session
-curl -s -X POST http://localhost:4000/api/sessions | jq '.session.id'
+# Start development server
+npm run dev
 
-# replace SESSION_ID below with the value returned above
-curl -s http://localhost:4000/api/sessions/SESSION_ID/validate | jq '.validation'
+# Or with file watching
+npm run dev:watch
+
+# Test without OpenAI API key
+npm run dev:stub
 ```
 
-`/validate` now accepts either `GET` or `POST`, so the last command works
-verbatim with the ID returned from the session creation response.
+### Production Installation
 
-Session data is written to `server/data/sessions.json` (override with the
-`SESSION_DB_PATH` environment variable). The on-disk store survives process
-restarts so you can refresh the client without losing progress.
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd esg-client-interview-bot
+   ```
 
-## Architecture overview
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
 
-- `server/` contains a lightweight HTTP router, conversation state machine, and
-  validation utilities that mirror the canonical SDR JSON schema.
-- `public/` provides an accessible chat UI that exercises the API. The summary
-  panel shows the evolving session payload and the report section surfaces the
-  rendered preview + PDF download when available.
+3. **Configure environment**
+   ```bash
+   # For production
+   npm run setup:prod
+   # Edit .env.production with your configuration
+   ```
 
-### API surface
+4. **Run database migrations**
+   ```bash
+   npm run db:migrate
+   ```
 
-All endpoints live under `/api`:
+5. **Start the application**
+   ```bash
+   npm run start:prod
+   ```
 
-| Method | Path | Description |
-| ------ | ---- | ----------- |
-| `GET` | `/api/health` | Liveness probe |
-| `POST` | `/api/sessions` | Create a session and return the first prompt |
-| `GET` | `/api/sessions/{id}` | Retrieve the latest session snapshot |
-| `POST` | `/api/sessions/{id}/events` | Append chat/audit events and optional data patches |
-| `GET`/`POST` | `/api/sessions/{id}/validate` | Run SDR suitability checks |
-| `GET` | `/api/sessions/{id}/report.pdf` | Download the generated PDF report |
-| `POST` | `/api/reports` | Generate a placeholder DOCX reference (in-memory) |
-| `POST` | `/api/esign/envelopes` | Simulate e-sign envelope creation |
-| `POST` | `/api/esign/webhook` | Accept webhook notifications |
-| `GET` | `/api/adviser/cases` | Adviser overview of active sessions |
-| `GET` | `/api/adviser/cases/{id}` | Detailed case view |
-| `PATCH` | `/api/adviser/cases/{id}` | Update adviser commentary / overrides |
+6. **Verify installation**
+   ```bash
+   curl http://localhost:8080/health
+   ```
 
-The server uses a lightweight JSON store for persistence (see `server/data/`).
-Delete the file to reset the environment during local testing.
+## Architecture
 
+The system follows a modular architecture with clear separation of concerns:
 
-### Validation rules implemented
+- **Conversation Engine**: Manages the 8-segment interview flow
+- **Session Management**: Handles persistent session storage and state
+- **Validation System**: Ensures COBS 9A compliance and regulatory requirements
+- **Report Generation**: Creates professional PDF suitability reports
+- **Investment Explorer**: Matches client preferences to investment products
+- **OpenAI Integration**: Provides natural language processing capabilities
 
-`server/state/validateSession.js` enforces the key compliance checks from the
-specification:
+For detailed architecture information, see [docs/architecture.md](docs/architecture.md).
 
-- Consent acknowledgement is explicit and timestamped.
-- Client profile captures UUID, email, ATR, CfL, and horizon.
-- Pathway allocations sum to 100% with SDG/impact follow-ups when applicable.
-- Ethical screens cannot be left empty when enabled.
-- Bespoke fees require an explanation.
-- Report metadata (version) is set before document generation.
+## Conversation Flow
 
-`POST /api/sessions/{id}/validate` returns `{ valid: boolean, issues: string[] }`
-so the UI or adviser console can surface outstanding gaps before drafting the
-report.
+The system guides clients through 8 structured segments:
 
-## Next steps
+1. **Explanation**: System introduction and purpose
+2. **Onboarding**: Client identification and basic information
+3. **Consent**: Data processing and regulatory consents
+4. **Education**: ESG concepts and SDR label education
+5. **Options**: Investment preference capture
+6. **Confirmation**: Review and confirmation of captured data
+7. **Report**: Suitability report generation
+8. **Delivery**: Report delivery and completion
 
-- Swap the JSON file store for a managed database (e.g. PostgreSQL) when
-  deploying to shared infrastructure.
-- Replace the placeholder DOCX/ESign handlers with real integrations.
-- Add end-to-end tests that drive the browser UI through the full ESG journey.
+## API Endpoints
+
+### Core Endpoints
+
+- `GET /health` - Health check endpoint
+- `POST /api/sessions` - Create new session
+- `GET /api/sessions/:id` - Retrieve session data
+- `POST /api/sessions/:id/message` - Send message to conversation engine
+- `GET /api/sessions/:id/report` - Generate and retrieve suitability report
+
+### Management Endpoints
+
+- `GET /api/sessions` - List all sessions (with filtering)
+- `PUT /api/sessions/:id` - Update session data
+- `DELETE /api/sessions/:id` - Delete session
+- `POST /api/sessions/:id/reset` - Reset session to beginning
+
+For complete API documentation, see the OpenAPI specification in `server/spec/`.
+
+## Configuration
+
+### Environment Variables
+
+Key configuration options:
+
+```bash
+# OpenAI Configuration
+OPENAI_API_KEY=your_api_key_here
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_STUB=false  # Set to true for development without API key
+
+# Database Configuration
+DB_TYPE=sqlite  # or postgresql
+SQLITE_PATH=./server/data/sessions.db
+
+# Server Configuration
+NODE_ENV=development  # or production
+PORT=4000
+HOST=localhost
+
+# Security Configuration
+CORS_ORIGIN=*  # Restrict in production
+RATE_LIMIT_MAX=100
+```
+
+For complete configuration options, see the environment templates:
+- [.env.development.template](.env.development.template)
+- [.env.production.template](.env.production.template)
+
+## Deployment
+
+### Development Deployment
+
+```bash
+npm run start:dev
+```
+
+### Production Deployment
+
+#### Option 1: Direct Node.js
+```bash
+./scripts/deploy.sh production
+```
+
+#### Option 2: Docker
+```bash
+docker-compose up -d --build
+```
+
+#### Option 3: Docker Development
+```bash
+docker-compose -f docker-compose.dev.yml up --build
+```
+
+For detailed deployment instructions, see [docs/deployment.md](docs/deployment.md).
+
+## Database Management
+
+### Migrations
+
+```bash
+# Run pending migrations
+npm run db:migrate
+
+# Check migration status
+npm run db:status
+
+# Rollback to specific version
+npm run db:rollback <version>
+```
+
+### Backups
+
+```bash
+# Create backup
+npm run db:backup [backup-name]
+
+# List backups
+npm run db:backup list
+
+# Restore from backup
+npm run db:restore <backup-file>
+
+# Cleanup old backups
+npm run db:cleanup [retention-days]
+```
+
+## Monitoring and Operations
+
+### Health Monitoring
+
+The application provides comprehensive monitoring capabilities:
+
+- Health check endpoint: `/health`
+- Metrics endpoint: `:9090/metrics` (Prometheus format)
+- Audit logging: `server/data/audit.log`
+
+### Operational Commands
+
+```bash
+# Check service status
+sudo systemctl status esg-bot
+
+# View logs
+sudo journalctl -u esg-bot -f
+
+# View audit logs
+npm run logs:audit
+
+# Security audit
+npm run security:audit
+```
+
+For complete operational procedures, see [docs/operations.md](docs/operations.md).
+
+## Testing
+
+### Running Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run with coverage
+npm run test:coverage
+
+# Run specific test file
+npm test tests/conversationEngine.test.js
+```
+
+### Test Categories
+
+- **Unit Tests**: Core functionality testing
+- **Integration Tests**: End-to-end conversation flows
+- **Compliance Tests**: Regulatory requirement validation
+- **Performance Tests**: Load and stress testing
+
+## Security
+
+### Security Features
+
+- Input validation and sanitization
+- Rate limiting and DDoS protection
+- CORS policy enforcement
+- Security headers (HSTS, CSP, etc.)
+- Audit logging and compliance tracking
+- Secure session management
+
+### Security Configuration
+
+```bash
+# Enable security features in production
+NODE_ENV=production
+CORS_ORIGIN=https://yourdomain.com
+RATE_LIMIT_MAX=100
+AUDIT_LOG_ENABLED=true
+```
+
+## Compliance
+
+The system ensures compliance with:
+
+- **FCA Consumer Duty**: Plain language, comprehension checks, best interests
+- **COBS 9A**: Suitability assessment and documentation requirements
+- **SDR**: Sustainability Disclosure Requirements and anti-greenwashing rules
+- **Data Protection**: GDPR-compliant data handling and consent management
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Service won't start**: Check port availability and Node.js version
+2. **Database connection failed**: Verify database configuration and permissions
+3. **OpenAI API errors**: Check API key and rate limits
+4. **Memory issues**: Monitor resource usage and optimize configuration
+
+For detailed troubleshooting, see [docs/troubleshooting.md](docs/troubleshooting.md).
+
+### Getting Help
+
+- Check the troubleshooting guide
+- Review application logs
+- Create GitHub issue with diagnostic information
+- Contact support team for production issues
+
+## Development
+
+### Project Structure
+
+```
+├── server/                 # Server-side code
+│   ├── state/             # Business logic and state management
+│   ├── integrations/      # External service integrations
+│   ├── monitoring/        # Logging and metrics
+│   └── spec/              # API specifications
+├── public/                # Client-side assets
+├── tests/                 # Test files
+├── docs/                  # Documentation
+├── config/                # Environment configurations
+├── scripts/               # Deployment and utility scripts
+└── monitoring/            # Monitoring configurations
+```
+
+### Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests for new functionality
+5. Ensure all tests pass
+6. Submit a pull request
+
+### Code Style
+
+- Use ESM modules (import/export)
+- Follow Node.js best practices
+- Include comprehensive error handling
+- Add JSDoc comments for public APIs
+- Maintain test coverage above 80%
+
+## License
+
+This project is proprietary software. All rights reserved.
+
+## Support
+
+For technical support:
+- Create GitHub issues for bugs and feature requests
+- Contact the development team for urgent production issues
+- Review documentation and troubleshooting guides first
+
+---
+
+**Version**: 0.2.0  
+**Last Updated**: January 2024  
+**Node.js**: 18.0.0+  
+**License**: Proprietary

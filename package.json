@@ -5,9 +5,40 @@
   "type": "module",
   "scripts": {
     "start": "node server/server.js",
-    "test": "node --test"
+    "start:prod": "NODE_ENV=production node server/server.js",
+    "start:dev": "NODE_ENV=development node server/server.js",
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage",
+    "db:migrate": "node scripts/database/migrate.js migrate",
+    "db:rollback": "node scripts/database/migrate.js rollback",
+    "db:status": "node scripts/database/migrate.js status",
+    "db:backup": "node scripts/database/backup.js create",
+    "db:restore": "node scripts/database/backup.js restore",
+    "db:cleanup": "node scripts/database/backup.js cleanup",
+    "security:audit": "npm audit --audit-level moderate",
+    "health:check": "curl -f http://localhost:${PORT:-4000}/health || exit 1",
+    "logs:audit": "tail -f server/data/audit.log",
+    "setup:prod": "cp .env.production.template .env.production && echo 'Please edit .env.production with your configuration'",
+    "setup:dev": "node scripts/setup-dev.js",
+    "dev": "NODE_ENV=development node server/server.js",
+    "dev:watch": "NODE_ENV=development node --watch server/server.js",
+    "dev:debug": "NODE_ENV=development node --inspect server/server.js",
+    "dev:stub": "NODE_ENV=development OPENAI_STUB=true node server/server.js",
+    "dev:simple": "NODE_ENV=development node server/simple-server.js",
+    "dev:minimal": "NODE_ENV=development node server/minimal-server.js"
   },
   "dependencies": {
-    "openai": "^4.52.0"
+    "openai": "^4.52.0",
+    "ws": "^8.16.0",
+    "better-sqlite3": "^9.2.2"
+  },
+  "devDependencies": {
+  },
+  "optionalDependencies": {
+    "pg": "^8.11.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
   }
 }

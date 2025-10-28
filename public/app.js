@@ -131,6 +131,7 @@ const api = async (path, options = {}) => {
 let currentSessionId = null;
 let currentSession = null;
 let educationPackAutoOpened = false;
+let multiModalInterface = null;
 
 const openEducationPack = () => {
   if (!educationPackSection) return;
@@ -988,6 +989,40 @@ const setSessionData = (session) => {
   updateEducationPackAvailability(session);
 };
 
+// Session manager for multi-modal interface
+const sessionManager = {
+  getCurrentSession: () => currentSession,
+  submitMultiModalInput: async (input) => {
+    if (!currentSessionId) {
+      showError("Session not ready yet. Please refresh the page.");
+      return;
+    }
+
+    try {
+      const response = await api(`/sessions/${currentSessionId}/events`, {
+        method: "POST",
+        body: {
+          author: "client",
+          type: "multi_modal_input",
+          content: input
+        }
+      });
+
+      setSessionData(response.session);
+      (response.messages ?? []).forEach((message) =>
+        addMessage("assistant", message)
+      );
+
+      // Handle input suggestions if provided
+      if (response.inputSuggestions) {
+        multiModalInterface?.showInputSuggestions(response.inputSuggestions);
+      }
+    } catch (error) {
+      showError(error.message);
+    }
+  }
+};
+
 const bootstrap = async () => {
   try {
     const data = await api("/sessions", { method: "POST" });
@@ -995,6 +1030,11 @@ const bootstrap = async () => {
     setSessionId(currentSessionId);
     setSessionData(data.session);
     data.messages.forEach((message) => addMessage("assistant", message));
+    
+    // Initialize multi-modal interface
+    if (window.MultiModalInterface) {
+      multiModalInterface = new window.MultiModalInterface(sessionManager);
+    }
   } catch (error) {
     showError(error.message);
     sendButton.disabled = true;

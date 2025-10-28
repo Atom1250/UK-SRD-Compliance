@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESG Bot WebSocket Monitor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .panel {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .log {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background-color: #f8f9fa;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+        .log-entry.error {
+            color: #dc3545;
+        }
+        .log-entry.success {
+            color: #28a745;
+        }
+        .log-entry.info {
+            color: #17a2b8;
+        }
+        .controls {
+            margin-bottom: 20px;
+        }
+        .controls input, .controls button, .controls select {
+            margin: 5px;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .controls button {
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        .controls button:hover {
+            background-color: #0056b3;
+        }
+        .controls button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .alert {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            border-left: 4px solid;
+        }
+        .alert.high {
+            background-color: #f8d7da;
+            border-color: #dc3545;
+            color: #721c24;
+        }
+        .alert.medium {
+            background-color: #fff3cd;
+            border-color: #ffc107;
+            color: #856404;
+        }
+        .alert.low {
+            background-color: #d1ecf1;
+            border-color: #17a2b8;
+            color: #0c5460;
+        }
+        .session-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+        }
+        .session-item {
+            padding: 5px;
+            margin: 2px 0;
+            background-color: #f8f9fa;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .session-item:hover {
+            background-color: #e9ecef;
+        }
+        .session-item.subscribed {
+            background-color: #d4edda;
+        }
+    </style>
+</head>
+<body>
+    <h1>ESG Bot WebSocket Session Monitor</h1>
+    
+    <div class="status" id="connectionStatus">
+        Disconnected
+    </div>
+    
+    <div class="controls">
+        <button id="connectBtn">Connect</button>
+        <button id="disconnectBtn" disabled>Disconnect</button>
+        <button id="subscribeAllBtn" disabled>Subscribe to All Sessions</button>
+        <button id="getAlertsBtn" disabled>Get Active Alerts</button>
+        <button id="clearLogBtn">Clear Log</button>
+    </div>
+    
+    <div class="container">
+        <div class="panel">
+            <h3>Session Subscriptions</h3>
+            <div class="controls">
+                <input type="text" id="sessionIdInput" placeholder="Session ID">
+                <button id="subscribeBtn" disabled>Subscribe</button>
+                <button id="unsubscribeBtn" disabled>Unsubscribe</button>
+            </div>
+            <div class="session-list" id="sessionList">
+                <div class="session-item">No sessions available</div>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h3>Active Alerts</h3>
+            <div id="alertsList">
+                <div>No active alerts</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="panel">
+        <h3>WebSocket Log</h3>
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        class WebSocketMonitor {
+            constructor() {
+                this.ws = null;
+                this.subscriptions = new Set();
+                this.alerts = new Map();
+                this.sessions = new Map();
+                
+                this.initializeUI();
+            }
+            
+            initializeUI() {
+                document.getElementById('connectBtn').addEventListener('click', () => this.connect());
+                document.getElementById('disconnectBtn').addEventListener('click', () => this.disconnect());
+                document.getElementById('subscribeAllBtn').addEventListener('click', () => this.subscribeToAll());
+                document.getElementById('subscribeBtn').addEventListener('click', () => this.subscribeToSession());
+                document.getElementById('unsubscribeBtn').addEventListener('click', () => this.unsubscribeFromSession());
+                document.getElementById('getAlertsBtn').addEventListener('click', () => this.getActiveAlerts());
+                document.getElementById('clearLogBtn').addEventListener('click', () => this.clearLog());
+            }
+            
+            connect() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/ws/sessions`;
+                
+                this.log('Connecting to WebSocket...', 'info');
+                
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    this.log('Connected to WebSocket', 'success');
+                    this.updateConnectionStatus(true);
+                };
+                
+                this.ws.onmessage = (event) => {
+                    try {
+                        const message = JSON.parse(event.data);
+                        this.handleMessage(message);
+                    } catch (error) {
+                        this.log(`Failed to parse message: ${error.message}`, 'error');
+                    }
+                };
+                
+                this.ws.onclose = () => {
+                    this.log('WebSocket connection closed', 'info');
+                    this.updateConnectionStatus(false);
+                };
+                
+                this.ws.onerror = (error) => {
+                    this.log(`WebSocket error: ${error.message || 'Unknown error'}`, 'error');
+                };
+            }
+            
+            disconnect() {
+                if (this.ws) {
+                    this.ws.close();
+                    this.ws = null;
+                }
+            }
+            
+            send(message) {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify(message));
+                    return true;
+                }
+                this.log('WebSocket not connected', 'error');
+                return false;
+            }
+            
+            subscribeToAll() {
+                if (this.send({ type: 'subscribe_all_sessions' })) {
+                    this.log('Subscribed to all sessions', 'success');
+                }
+            }
+            
+            subscribeToSession() {
+                const sessionId = document.getElementById('sessionIdInput').value.trim();
+                if (!sessionId) {
+                    this.log('Please enter a session ID', 'error');
+                    return;
+                }
+                
+                if (this.send({ type: 'subscribe_session', payload: { sessionId } })) {
+                    this.subscriptions.add(sessionId);
+                    this.log(`Subscribed to session: ${sessionId}`, 'success');
+                    this.updateSessionList();
+                }
+            }
+            
+            unsubscribeFromSession() {
+                const sessionId = document.getElementById('sessionIdInput').value.trim();
+                if (!sessionId) {
+                    this.log('Please enter a session ID', 'error');
+                    return;
+                }
+                
+                if (this.send({ type: 'unsubscribe_session', payload: { sessionId } })) {
+                    this.subscriptions.delete(sessionId);
+                    this.log(`Unsubscribed from session: ${sessionId}`, 'success');
+                    this.updateSessionList();
+                }
+            }
+            
+            getActiveAlerts() {
+                if (this.send({ type: 'get_active_alerts' })) {
+                    this.log('Requested active alerts', 'info');
+                }
+            }
+            
+            handleMessage(message) {
+                this.log(`Received: ${message.type}`, 'info');
+                
+                switch (message.type) {
+                    case 'connected':
+                        this.log(`Client ID: ${message.clientId}`, 'success');
+                        break;
+                        
+                    case 'session_updated':
+                        this.handleSessionUpdate(message);
+                        break;
+                        
+                    case 'alert_created':
+                        this.handleAlertCreated(message.alert);
+                        break;
+                        
+                    case 'alert_acknowledged':
+                        this.handleAlertAcknowledged(message);
+                        break;
+                        
+                    case 'active_alerts':
+                        this.updateAlertsList(message.alerts);
+                        break;
+                        
+                    case 'session_status':
+                        this.handleSessionStatus(message);
+                        break;
+                        
+                    case 'error':
+                        this.log(`Error: ${message.error}`, 'error');
+                        break;
+                        
+                    case 'pong':
+                        this.log('Pong received', 'info');
+                        break;
+                        
+                    default:
+                        this.log(`Unknown message type: ${message.type}`, 'info');
+                }
+            }
+            
+            handleSessionUpdate(message) {
+                const { sessionId, updateType, status } = message;
+                this.sessions.set(sessionId, status);
+                this.log(`Session ${sessionId} updated: ${updateType}`, 'info');
+                
+                if (updateType === 'compliance_issue' || updateType === 'guardrail_trigger') {
+                    this.log(`⚠️ ${updateType.toUpperCase()}: ${message.data?.message || 'Issue detected'}`, 'error');
+                }
+            }
+            
+            handleSessionStatus(message) {
+                const { sessionId, status } = message;
+                this.sessions.set(sessionId, status);
+                this.log(`Session ${sessionId} status: ${status.status} (${status.progress.percentage}%)`, 'info');
+            }
+            
+            handleAlertCreated(alert) {
+                this.alerts.set(alert.id, alert);
+                this.log(`🚨 Alert: ${alert.title}`, 'error');
+                this.updateAlertsList(Array.from(this.alerts.values()));
+            }
+            
+            handleAlertAcknowledged(message) {
+                const alert = this.alerts.get(message.alertId);
+                if (alert) {
+                    alert.acknowledged = true;
+                    this.log(`✅ Alert acknowledged: ${message.alertId}`, 'success');
+                    this.updateAlertsList(Array.from(this.alerts.values()));
+                }
+            }
+            
+            updateConnectionStatus(connected) {
+                const statusEl = document.getElementById('connectionStatus');
+                const buttons = ['connectBtn', 'disconnectBtn', 'subscribeAllBtn', 'subscribeBtn', 'unsubscribeBtn', 'getAlertsBtn'];
+                
+                if (connected) {
+                    statusEl.textContent = 'Connected';
+                    statusEl.className = 'status connected';
+                    document.getElementById('connectBtn').disabled = true;
+                    document.getElementById('disconnectBtn').disabled = false;
+                    document.getElementById('subscribeAllBtn').disabled = false;
+                    document.getElementById('subscribeBtn').disabled = false;
+                    document.getElementById('unsubscribeBtn').disabled = false;
+                    document.getElementById('getAlertsBtn').disabled = false;
+                } else {
+                    statusEl.textContent = 'Disconnected';
+                    statusEl.className = 'status disconnected';
+                    document.getElementById('connectBtn').disabled = false;
+                    document.getElementById('disconnectBtn').disabled = true;
+                    document.getElementById('subscribeAllBtn').disabled = true;
+                    document.getElementById('subscribeBtn').disabled = true;
+                    document.getElementById('unsubscribeBtn').disabled = true;
+                    document.getElementById('getAlertsBtn').disabled = true;
+                }
+            }
+            
+            updateSessionList() {
+                const listEl = document.getElementById('sessionList');
+                if (this.subscriptions.size === 0) {
+                    listEl.innerHTML = '<div class="session-item">No subscriptions</div>';
+                    return;
+                }
+                
+                listEl.innerHTML = Array.from(this.subscriptions)
+                    .map(sessionId => `<div class="session-item subscribed">${sessionId}</div>`)
+                    .join('');
+            }
+            
+            updateAlertsList(alerts) {
+                const listEl = document.getElementById('alertsList');
+                
+                if (!alerts || alerts.length === 0) {
+                    listEl.innerHTML = '<div>No active alerts</div>';
+                    return;
+                }
+                
+                const activeAlerts = alerts.filter(alert => !alert.acknowledged);
+                
+                if (activeAlerts.length === 0) {
+                    listEl.innerHTML = '<div>No active alerts</div>';
+                    return;
+                }
+                
+                listEl.innerHTML = activeAlerts
+                    .map(alert => `
+                        <div class="alert ${alert.priority}">
+                            <strong>${alert.title}</strong><br>
+                            <small>Session: ${alert.sessionId}</small><br>
+                            ${alert.message}<br>
+                            <small>${new Date(alert.timestamp).toLocaleString()}</small>
+                        </div>
+                    `)
+                    .join('');
+            }
+            
+            log(message, type = 'info') {
+                const logEl = document.getElementById('log');
+                const timestamp = new Date().toLocaleTimeString();
+                const entry = document.createElement('div');
+                entry.className = `log-entry ${type}`;
+                entry.textContent = `[${timestamp}] ${message}`;
+                
+                logEl.appendChild(entry);
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+            
+            clearLog() {
+                document.getElementById('log').innerHTML = '';
+            }
+        }
+        
+        // Initialize the monitor when the page loads
+        const monitor = new WebSocketMonitor();
+        
+        // Auto-connect for convenience
+        window.addEventListener('load', () => {
+            setTimeout(() => monitor.connect(), 1000);
+        });
+    </script>
+</body>
+</html>

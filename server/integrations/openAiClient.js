@@ -1,3 +1,7 @@
+import cacheManager from "../cache/cacheManager.js";
+import { monitorOpenAIRequest } from "../monitoring/performanceMonitor.js";
+import logger from "../monitoring/logger.js";
+
 const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 
 const COMPLIANCE_SYSTEM_PROMPT = `You are an FCA Consumer Duty compliance co-pilot.
@@ -236,22 +240,79 @@ async function defaultResponder({ messages, model = DEFAULT_MODEL } = {}) {
     );
   }
 
-  try {
-    const client = await getClient();
-    const completion = await client.chat.completions.create({
-      model,
-      messages,
-      response_format: { type: "json_schema", json_schema: complianceSchema },
-      temperature: 0.2
-    });
+  // Use monitoring wrapper
+  return await monitorOpenAIRequest(async () => {
+    try {
+      // Validate input messages
+      if (!Array.isArray(messages) || messages.length === 0) {
+        throw new Error("Invalid or empty messages array");
+      }
+      
+      // Sanitize messages to prevent injection attacks
+      const sanitizedMessages = messages.map(msg => ({
+        role: msg.role,
+        content: typeof msg.content === 'string' ? msg.content.slice(0, 50000) : String(msg.content).slice(0, 50000)
+      }));
 
-    const content = parseContent(completion?.choices?.[0]);
-    if (!content) {
-      throw new Error("OpenAI returned an empty response");
-    }
+      // Generate cache key for this request
+      const requestHash = cacheManager.constructor.generateHash({
+        messages: sanitizedMessages,
+        model,
+        temperature: 0.2
+      });
+      
+      // Try cache first
+      const cached = cacheManager.getOpenAiResponse(requestHash);
+      if (cached) {
+        logger.logOpenAI('cache_hit', { requestHash });
+        return cached;
+      }
 
-    return JSON.parse(content);
-  } catch (error) {
+      logger.logOpenAI('request_start', { model, messageCount: sanitizedMessages.length });
+
+      const client = await getClient();
+      
+      // Add timeout and retry logic
+      const completion = await Promise.race([
+        client.chat.completions.create({
+          model,
+          messages: sanitizedMessages,
+          response_format: { type: "json_schema", json_schema: complianceSchema },
+          temperature: 0.2,
+          max_tokens: 2000 // Limit response size
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('OpenAI request timeout')), 30000)
+        )
+      ]);
+
+      const content = parseContent(completion?.choices?.[0]);
+      if (!content) {
+        throw new Error("OpenAI returned an empty response");
+      }
+
+      let parsed;
+      try {
+        parsed = JSON.parse(content);
+      } catch (parseError) {
+        logger.warn('Failed to parse OpenAI JSON response', { error: parseError.message });
+        throw new Error("OpenAI returned invalid JSON payload");
+      }
+      
+      // Validate response structure
+      if (!parsed || typeof parsed !== 'object' || typeof parsed.reply !== 'string') {
+        throw new Error("OpenAI response missing required fields");
+      }
+
+      // Cache successful response
+      cacheManager.setOpenAiResponse(requestHash, parsed);
+      logger.logOpenAI('request_success', { requestHash, responseLength: parsed.reply.length });
+
+      return parsed;
+      
+    } catch (error) {
+    console.error('OpenAI request failed:', error.message);
+    
     if (error?.code === "OPENAI_NOT_INSTALLED") {
       return buildComplianceStub(
         { messages },
@@ -275,13 +336,49 @@ async function defaultResponder({ messages, model = DEFAULT_MODEL } = {}) {
       err.status = 502;
       throw err;
     }
-
-    if (error instanceof SyntaxError) {
-      throw new Error("OpenAI returned invalid JSON payload");
+    
+    // Handle rate limiting
+    if (getErrorStatusCode(error) === 429) {
+      return buildComplianceStub(
+        { messages },
+        {
+          note: "Rate limit exceeded, using fallback response",
+          replyPrefix: "I'm experiencing high demand right now, but"
+        }
+      );
+    }
+    
+    // Handle timeout errors
+    if (error.message === 'OpenAI request timeout') {
+      return buildComplianceStub(
+        { messages },
+        {
+          note: "Request timeout, using fallback response",
+          replyPrefix: "I'm experiencing slow response times, but"
+        }
+      );
     }
 
-    throw error;
+    if (error instanceof SyntaxError || error.message.includes('JSON')) {
+      return buildComplianceStub(
+        { messages },
+        {
+          note: "Invalid response format, using fallback",
+          replyPrefix: "I received an unexpected response format, but"
+        }
+      );
+    }
+
+    // For any other errors, use fallback
+    return buildComplianceStub(
+      { messages },
+      {
+        note: `Unexpected error: ${error.message}`,
+        replyPrefix: "I encountered a technical issue, but"
+      }
+    );
   }
+  }); // Close monitorOpenAIRequest function call
 }
 
 export function setComplianceResponder(fn) {

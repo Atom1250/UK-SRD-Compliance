@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      target: development
+    ports:
+      - "${PORT:-4000}:4000"
+    environment:
+      - NODE_ENV=development
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - app_data:/app/server/data
+    restart: unless-stopped
+    networks:
+      - dev_network
+
+volumes:
+  app_data:
+
+networks:
+  dev_network:
+    driver: bridge
