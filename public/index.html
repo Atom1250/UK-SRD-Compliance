@@ -88,6 +88,45 @@
         <pre id="session-data">{}</pre>
       </section>
 
+      <section class="analytics" id="analytics" hidden aria-live="polite">
+        <div class="analytics__header">
+          <h2>Conversation analytics</h2>
+          <p>
+            Live metrics summarise engagement trends, stage progress, and any
+            outstanding adviser actions for the active session.
+          </p>
+        </div>
+        <div class="analytics__grid">
+          <article class="analytics-card">
+            <h3 class="analytics-card__title">Session overview</h3>
+            <dl id="analytics-overview" class="analytics-stats"></dl>
+          </article>
+          <article class="analytics-card">
+            <h3 class="analytics-card__title">Engagement mix</h3>
+            <div>
+              <h4 class="analytics-card__subtitle">Participants</h4>
+              <ul id="analytics-participants" class="analytics-list"></ul>
+            </div>
+            <div>
+              <h4 class="analytics-card__subtitle">Event types</h4>
+              <ul id="analytics-event-types" class="analytics-list"></ul>
+            </div>
+          </article>
+          <article class="analytics-card">
+            <h3 class="analytics-card__title">Readiness checks</h3>
+            <dl id="analytics-readiness" class="analytics-stats"></dl>
+            <div class="analytics-card__divider" role="presentation"></div>
+            <h4 class="analytics-card__subtitle">Pending adviser actions</h4>
+            <ul id="analytics-pending" class="analytics-list"></ul>
+          </article>
+          <article class="analytics-card">
+            <h3 class="analytics-card__title">Latest activity</h3>
+            <dl id="analytics-latest" class="analytics-stats"></dl>
+          </article>
+        </div>
+        <p id="analytics-error" class="analytics__error" hidden></p>
+      </section>
+
       <section class="report" id="report-section" hidden aria-live="polite">
         <h2>Report preview</h2>
         <p>

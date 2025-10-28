@@ -16,6 +16,14 @@ const educationPackToggle = document.getElementById("view-education-pack");
 const educationPackSection = document.getElementById("education-pack");
 const educationPackClose = document.getElementById("close-education-pack");
 const educationPackReturn = document.getElementById("return-to-questionnaire");
+const analyticsSection = document.getElementById("analytics");
+const analyticsOverview = document.getElementById("analytics-overview");
+const analyticsParticipantsList = document.getElementById("analytics-participants");
+const analyticsEventTypesList = document.getElementById("analytics-event-types");
+const analyticsReadiness = document.getElementById("analytics-readiness");
+const analyticsPendingList = document.getElementById("analytics-pending");
+const analyticsLatest = document.getElementById("analytics-latest");
+const analyticsError = document.getElementById("analytics-error");
 
 const bodyElement = document.body;
 
@@ -131,6 +139,7 @@ const api = async (path, options = {}) => {
 let currentSessionId = null;
 let currentSession = null;
 let educationPackAutoOpened = false;
+let analyticsAbortController = null;
 
 const openEducationPack = () => {
   if (!educationPackSection) return;
@@ -272,6 +281,257 @@ const formatExclusionDisplay = (exclusions = []) => {
     })
     .filter(Boolean)
     .join(", ");
+};
+
+const formatLabel = (value) => {
+  if (!value) return "—";
+  return String(value)
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const formatDateTime = (value) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+  return new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(date);
+};
+
+const pluralise = (count, singular, plural = `${singular}s`) => {
+  const value = Number(count) || 0;
+  const label = value === 1 ? singular : plural;
+  return `${value} ${label}`;
+};
+
+const formatDurationMinutes = (minutes) => {
+  if (minutes === null || minutes === undefined) return "—";
+  const total = Number(minutes);
+  if (!Number.isFinite(total)) return "—";
+  if (total < 1) return "<1 minute";
+  if (total < 60) return pluralise(Math.round(total), "minute");
+  const hours = Math.floor(total / 60);
+  const remainder = Math.round(total % 60);
+  const hourLabel = pluralise(hours, "hour");
+  if (remainder === 0) {
+    return hourLabel;
+  }
+  return `${hourLabel} ${pluralise(remainder, "minute")}`;
+};
+
+const formatPercentage = (value) => {
+  if (value === null || value === undefined) return "—";
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "—";
+  const clamped = Math.max(0, Math.min(1, numeric));
+  return `${Math.round(clamped * 100)}%`;
+};
+
+const formatStatusFlag = (value) => (value ? "Complete" : "Pending");
+
+const renderDefinitionList = (container, items, emptyMessage) => {
+  if (!container) return;
+  container.replaceChildren();
+  const rows = Array.isArray(items) ? items.filter(Boolean) : [];
+
+  if (rows.length === 0) {
+    const dt = document.createElement("dt");
+    dt.textContent = "Status";
+    const dd = document.createElement("dd");
+    dd.textContent = emptyMessage;
+    dd.classList.add("analytics-empty");
+    container.append(dt, dd);
+    return;
+  }
+
+  rows.forEach((row) => {
+    const dt = document.createElement("dt");
+    dt.textContent = row.term;
+    const dd = document.createElement("dd");
+    dd.textContent = row.description;
+    container.append(dt, dd);
+  });
+};
+
+const renderList = (container, items, emptyMessage) => {
+  if (!container) return;
+  container.replaceChildren();
+  const values = Array.isArray(items) ? items.filter(Boolean) : [];
+
+  if (values.length === 0) {
+    const item = document.createElement("li");
+    item.textContent = emptyMessage;
+    item.classList.add("analytics-empty");
+    container.appendChild(item);
+    return;
+  }
+
+  values.forEach((value) => {
+    const item = document.createElement("li");
+    item.textContent = value;
+    container.appendChild(item);
+  });
+};
+
+const renderAnalytics = (analytics) => {
+  if (!analyticsSection) return;
+
+  const summary = analytics?.summary ?? {};
+  const effectiveness = analytics?.effectiveness ?? {};
+  const stageProgress = summary.stageProgress ?? {};
+  const timeline = summary.timeline ?? {};
+  const pendingActions = Array.isArray(effectiveness.pendingActions)
+    ? effectiveness.pendingActions
+    : [];
+
+  renderDefinitionList(
+    analyticsOverview,
+    [
+      {
+        term: "Events logged",
+        description: pluralise(summary.eventCount ?? 0, "event")
+      },
+      {
+        term: "Current stage",
+        description: formatLabel(stageProgress.currentStage)
+      },
+      {
+        term: "Completed stages",
+        description:
+          stageProgress.completedStages?.length > 0
+            ? stageProgress.completedStages
+                .map((stage) => formatLabel(stage))
+                .join(", ")
+            : "None"
+      },
+      {
+        term: "Journey duration",
+        description: formatDurationMinutes(timeline.durationMinutes)
+      }
+    ],
+    "No events recorded yet"
+  );
+
+  const participantEntries = Object.entries(summary.participants ?? {})
+    .sort(([, a], [, b]) => Number(b ?? 0) - Number(a ?? 0))
+    .map(([author, count]) => `${formatLabel(author)} — ${pluralise(count, "message")}`);
+
+  renderList(
+    analyticsParticipantsList,
+    participantEntries,
+    "No participant activity recorded"
+  );
+
+  const eventTypeEntries = Object.entries(summary.eventTypes ?? {})
+    .sort(([, a], [, b]) => Number(b ?? 0) - Number(a ?? 0))
+    .map(([type, count]) => `${formatLabel(type)} — ${pluralise(count, "event")}`);
+
+  renderList(
+    analyticsEventTypesList,
+    eventTypeEntries,
+    "No event types captured yet"
+  );
+
+  renderDefinitionList(
+    analyticsReadiness,
+    [
+      {
+        term: "Consent recorded",
+        description: formatStatusFlag(effectiveness.consentRecorded)
+      },
+      {
+        term: "Education acknowledged",
+        description: formatStatusFlag(effectiveness.educationCompleted)
+      },
+      {
+        term: "Report ready",
+        description: formatStatusFlag(effectiveness.reportReady)
+      },
+      {
+        term: "Completion ratio",
+        description: formatPercentage(effectiveness.completionRatio)
+      }
+    ],
+    "Readiness metrics unavailable"
+  );
+
+  renderList(
+    analyticsPendingList,
+    pendingActions,
+    "No outstanding adviser actions"
+  );
+
+  const lastEvent = summary.lastEvent ?? null;
+
+  renderDefinitionList(
+    analyticsLatest,
+    [
+      { term: "Started", description: formatDateTime(timeline.startedAt) },
+      {
+        term: "Last update",
+        description: formatDateTime(timeline.lastInteractionAt)
+      },
+      lastEvent
+        ? {
+            term: "Latest author",
+            description: formatLabel(lastEvent.author)
+          }
+        : null,
+      lastEvent
+        ? {
+            term: "Latest event",
+            description: formatLabel(lastEvent.type)
+          }
+        : null
+    ],
+    "No activity yet"
+  );
+};
+
+const refreshAnalytics = async (sessionId) => {
+  if (!analyticsSection) return;
+  if (!sessionId) {
+    analyticsSection.hidden = true;
+    return;
+  }
+
+  if (analyticsAbortController) {
+    analyticsAbortController.abort();
+  }
+
+  const controller = new AbortController();
+  analyticsAbortController = controller;
+
+  try {
+    const data = await api(`/sessions/${sessionId}/analytics`, {
+      signal: controller.signal
+    });
+
+    if (controller.signal.aborted) return;
+
+    renderAnalytics(data.analytics);
+    if (analyticsError) {
+      analyticsError.textContent = "";
+      analyticsError.hidden = true;
+    }
+    analyticsSection.hidden = false;
+  } catch (error) {
+    if (controller.signal.aborted) return;
+    if (analyticsError) {
+      analyticsError.textContent = error.message;
+      analyticsError.hidden = false;
+    }
+    analyticsSection.hidden = false;
+  } finally {
+    if (analyticsAbortController === controller) {
+      analyticsAbortController = null;
+    }
+  }
 };
 
 const createSummarySection = (title, rows) => {
@@ -986,6 +1246,7 @@ const setSessionData = (session) => {
   updateReport(session);
   renderStageForm(session);
   updateEducationPackAvailability(session);
+  refreshAnalytics(session.id);
 };
 
 const bootstrap = async () => {
