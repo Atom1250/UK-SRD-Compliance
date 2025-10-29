@@ -132,7 +132,7 @@ OPENAI_STUB=false  # Set to true for development without API key
 
 # Database Configuration
 DB_TYPE=sqlite  # or postgresql
-SQLITE_PATH=./server/data/sessions.db
+SESSION_DB_PATH=./server/data/sessions.json
 
 # Server Configuration
 NODE_ENV=development  # or production
@@ -147,6 +147,66 @@ RATE_LIMIT_MAX=100
 For complete configuration options, see the environment templates:
 - [.env.development.template](.env.development.template)
 - [.env.production.template](.env.production.template)
+
+### Using GitHub Secrets for OpenAI Access
+
+If you run the test suite or other automated tasks from GitHub Actions, store your real
+OpenAI key as a repository secret so the workflows can authenticate against the API:
+
+1. In GitHub, navigate to **Settings → Secrets and variables → Actions → New repository secret**.
+2. Create a secret named `OPENAI_API_KEY` and paste your production key as the value.
+3. The included workflow in `.github/workflows/openai-ci.yml` reads the secret and sets
+   `OPENAI_STUB=false`, allowing `npm test` to exercise the live OpenAI integration.
+4. Dispatch the workflow manually or trigger it by pushing to `main`/opening a pull request.
+
+Workflows will fail fast with a clear error message if the secret is not defined, preventing
+accidental runs without valid credentials.
+
+### Render Deployment Guide
+
+Deploying to [Render](https://render.com/) lets you run the service continuously with the same
+OpenAI API key that powers your GitHub CI workflows.
+
+1. **Fork or connect the repository**
+   - Push your latest changes to GitHub.
+   - Ensure the `OPENAI_API_KEY` secret is already configured under **Settings → Secrets and
+     variables → Actions**.
+
+2. **Provision the Render service**
+   - Visit the Render dashboard and choose **New → Blueprint**.
+   - Point Render at this repository and select the `render.yaml` blueprint that ships with the
+     codebase.
+   - Confirm the defaults (Node runtime, `npm install` build, `npm run start:prod` start command)
+     and create the service.
+
+3. **Configure environment variables**
+   - In the new service’s **Environment** tab add:
+     - `OPENAI_API_KEY` → paste the same key you stored in GitHub Secrets (Render does not sync
+       GitHub secrets automatically).
+     - `OPENAI_MODEL` → leave at `gpt-4o-mini` unless you need a different model.
+     - `OPENAI_STUB` → ensure this remains `false` so production traffic uses the real API.
+     - `SESSION_DB_PATH` → `/var/data/sessions.json` (matches the persistent disk mount).
+
+4. **Attach persistent storage**
+   - The blueprint provisions a 1 GB disk named `session-data` mounted at `/var/data`.
+   - You can adjust the size in `render.yaml` before deploying if you expect higher traffic.
+
+5. **Trigger the first deploy**
+   - Render automatically builds the service after environment variables are saved.
+   - Monitor the deploy logs to confirm dependency installation, database initialization, and
+     OpenAI connectivity all succeed.
+
+6. **Validate the deployment**
+   - Once Render marks the service as live, visit the public URL and hit `/health` to confirm the
+     app is responding.
+   - Start a session through the UI or `POST /api/sessions` to verify live OpenAI responses.
+
+7. **Ongoing updates**
+   - Every push to the default branch re-triggers the Render deploy pipeline.
+   - Keep the GitHub secret and the Render environment variable in sync if the OpenAI key changes.
+
+For custom domains, autoscaling, or background workers, extend the provided `render.yaml`
+blueprint following [Render’s documentation](https://render.com/docs/blueprint-spec).
 
 ## Deployment
 
