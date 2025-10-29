@@ -16,8 +16,13 @@ const educationPackToggle = document.getElementById("view-education-pack");
 const educationPackSection = document.getElementById("education-pack");
 const educationPackClose = document.getElementById("close-education-pack");
 const educationPackReturn = document.getElementById("return-to-questionnaire");
+const userDisplay = document.getElementById("user-display");
+const logoutButton = document.getElementById("logout-button");
+const statusSection = document.querySelector(".status");
+const summarySection = document.querySelector(".summary");
 
 const bodyElement = document.body;
+const REQUIRED_ROLE = bodyElement?.dataset?.role ?? null;
 
 const CLIENT_TYPES = ["individual", "joint", "trust", "company"];
 const RISK_SCALE = [1, 2, 3, 4, 5, 6, 7];
@@ -115,6 +120,7 @@ const api = async (path, options = {}) => {
   const response = await fetch(`/api${path}`, {
     method: "GET",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined
   });
@@ -128,10 +134,79 @@ const api = async (path, options = {}) => {
   return response.json();
 };
 
+const redirectForRole = (role) => {
+  switch (role) {
+    case "admin":
+      window.location.href = "/admin.html";
+      break;
+    case "advisor":
+      window.location.href = "/advisor.html";
+      break;
+    case "client":
+    default:
+      window.location.href = "/client.html";
+      break;
+  }
+};
+
+const updateUserDisplay = (user) => {
+  if (!userDisplay) return;
+  const label = user?.name || user?.username || "";
+  const role = user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : "";
+  userDisplay.textContent = label ? `${label} · ${role}` : role;
+};
+
+const hideClientSections = () => {
+  if (REQUIRED_ROLE !== "client") {
+    return;
+  }
+
+  statusSection?.setAttribute("hidden", "");
+  summarySection?.setAttribute("hidden", "");
+};
+
+const ensureAuthenticated = async () => {
+  try {
+    const response = await fetch("/api/auth/session", { credentials: "include" });
+    if (!response.ok) {
+      throw new Error("AUTH_REQUIRED");
+    }
+
+    const { user } = await response.json();
+    if (!user?.role) {
+      throw new Error("NO_ROLE");
+    }
+
+    if (REQUIRED_ROLE && user.role !== REQUIRED_ROLE && user.role !== "admin") {
+      redirectForRole(user.role);
+      return null;
+    }
+
+    activeUser = user;
+    updateUserDisplay(user);
+    hideClientSections();
+    return user;
+  } catch (error) {
+    throw error;
+  }
+};
+
+logoutButton?.addEventListener("click", async () => {
+  try {
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "include"
+    });
+  } finally {
+    window.location.href = "/index.html";
+  }
+});
+
 let currentSessionId = null;
 let currentSession = null;
 let educationPackAutoOpened = false;
 let multiModalInterface = null;
+let activeUser = null;
 
 const openEducationPack = () => {
   if (!educationPackSection) return;
@@ -1125,4 +1200,13 @@ askButton?.addEventListener("click", (event) => {
   submitFreeFormMessage();
 });
 
-bootstrap();
+ensureAuthenticated()
+  .then((user) => {
+    if (!user) {
+      return;
+    }
+    bootstrap();
+  })
+  .catch(() => {
+    window.location.href = "/index.html";
+  });

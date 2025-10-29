@@ -17,13 +17,18 @@ import logger from "../monitoring/logger.js";
 
 // Import session monitor for real-time notifications
 let sessionMonitor = null;
-try {
-  const { sessionMonitor: monitor } = await import("../websocket/sessionMonitor.js");
-  sessionMonitor = monitor;
-} catch (error) {
-  // WebSocket monitor not available, continue without real-time features
-  console.log('WebSocket session monitor not available');
-}
+import("../websocket/sessionMonitor.js")
+  .then(({ sessionMonitor: monitor }) => {
+    sessionMonitor = monitor;
+  })
+  .catch((error) => {
+    // WebSocket monitor not available, continue without real-time features
+    if (error?.code === 'ERR_MODULE_NOT_FOUND' || error?.code === 'MODULE_NOT_FOUND') {
+      console.log('WebSocket session monitor not available');
+    } else {
+      console.error('Failed to load WebSocket session monitor', error);
+    }
+  });
 
 const createEmptySessionData = (sessionId) => ({
   session_id: sessionId,
@@ -119,12 +124,14 @@ const createEmptySessionData = (sessionId) => ({
   additional_notes: ""
 });
 
-export const createSession = ({ ip } = {}) => {
+export const createSession = ({ ip, ownerId = null, ownerRole = null } = {}) => {
   const id = randomUUID();
   const timestamp = new Date().toISOString();
 
   const session = {
     id,
+    ownerId,
+    ownerRole,
     stage: CONVERSATION_STAGES[0],
     createdAt: timestamp,
     updatedAt: timestamp,

@@ -32,16 +32,31 @@ Bot: "We need your permission to record your answers for regulatory reporting."
 
 ---
 
-## Segment D — Educational (ESG & SDR/AGR)
-Modules:
-1. What ESG means (factors, not a guarantee).
-2. SDR labels: Focus, Improvers, Impact, Mixed Goals.
-3. Anti-Greenwashing Rule: only evidence-backed claims.
-4. Product disclosures will always be attached.
+## Segment D — Educational (ESG & SDR Pack v2.0)
+Content is served from `EDUCATION_PACK_METADATA` (id `esg_sdr_pack_v2`, version 2.0, 2025-10-29).
 
-Comprehension check:
-Bot: "Would you like me to summarise the difference between Focus and Improvers?"
-Log: educ_pack_sent=true
+Delivery order:
+1. Confirm micro-module quick reply relevance (ESG basics → SDR labels → Anti-greenwashing → Trade-offs → Product governance).
+2. Offer deeper intents when the client asks (per `EDUCATION_INTENTS`, includes deep links and quick replies).
+3. Provide deep-dive modules on request:
+   - What is ESG?
+   - SDR labels (Focus, Improvers, Impact, Mixed Goals and timeline cues).
+   - Anti-Greenwashing (FG24/3) obligations.
+   - KBS Investment Choices (Conventional, Conventional + ESG, Sustainability pathways, Ethical, Philanthropy).
+   - How fund managers decide “sustainable” investments (objectives, metrics, stewardship, evidence, updates).
+   - Suitability (COBS 9A) duties.
+   - Product Governance (PROD 3) duties.
+   - Disclosures & design for understanding (plain numbers, context, single-label display).
+   - Trade-offs & diversification, Ethical investing, SDGs and other preference-driven themes.
+
+Compliance hooks:
+- Every summary ends with anti-greenwashing and suitability guardrails plus pack disclaimers.
+- Log educational requests with module slug, interaction type, and comprehension check outcomes.
+
+Comprehension flow:
+1. Bot: "Would you like a quick overview or the full ESG & SDR educational pack (v2.0)?"
+2. If client accepts full pack → log `educ_pack_sent=true`, trigger PDF generation via `generateComprehensiveEducationPack()`.
+3. After each module: "Does that answer your question?" followed by the module-specific comprehension check where applicable.
 
 ---
 
@@ -75,7 +90,7 @@ Store: summary_confirmation.client_summary_confirmed=true
 Bot: "I’ve prepared your personalised pack: (1) Summary of your needs, (2) Sustainability preferences, (3) FCA label explainer, (4) Next steps."
 Outputs:
 - Client Summary PDF
-- ESG & SDR explainer (KBS doc)
+- ESG & SDR Educational Pack v2.0 (comprehensive PDF + module log)
 - Disclosure bundle (product docs attached later)
 
 ---
