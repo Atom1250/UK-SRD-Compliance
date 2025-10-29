@@ -18,7 +18,7 @@ A Node.js-based conversational AI system that guides UK financial planning clien
 
 ### Prerequisites
 
-- Node.js 18.0.0 or higher
+- Node.js 18.x or 20.x (ensure the runtime is < 22 due to native module support)
 - npm 8.0.0 or higher
 - SQLite (included) or PostgreSQL for production
 
@@ -178,9 +178,13 @@ OpenAI API key that powers your GitHub CI workflows.
      codebase.
    - Confirm the defaults (Node runtime, `npm install` build, `npm run start:prod` start command)
      and create the service.
+   - If Render selects a newer Node runtime, set the environment variable `NODE_VERSION` to
+     `20.17.0` during service creation so dependency builds use a compatible toolchain.
 
 3. **Configure environment variables**
    - In the new service’s **Environment** tab add:
+     - `NODE_VERSION` → `20.17.0` (prevents Render from upgrading to Node 22+, which breaks the
+       current `better-sqlite3` native build).
      - `OPENAI_API_KEY` → paste the same key you stored in GitHub Secrets (Render does not sync
        GitHub secrets automatically).
      - `OPENAI_MODEL` → leave at `gpt-4o-mini` unless you need a different model.
@@ -194,7 +198,8 @@ OpenAI API key that powers your GitHub CI workflows.
 5. **Trigger the first deploy**
    - Render automatically builds the service after environment variables are saved.
    - Monitor the deploy logs to confirm dependency installation, database initialization, and
-     OpenAI connectivity all succeed.
+     OpenAI connectivity all succeed. If you see `better-sqlite3` compilation failures referencing
+     V8 types, double-check that `NODE_VERSION` is set to 20.17.0.
 
 6. **Validate the deployment**
    - Once Render marks the service as live, visit the public URL and hit `/health` to confirm the
@@ -414,5 +419,5 @@ For technical support:
 
 **Version**: 0.2.0  
 **Last Updated**: January 2024  
-**Node.js**: 18.0.0+  
+**Node.js**: 18.x or 20.x (less than 22)
 **License**: Proprietary

@@ -6,6 +6,8 @@ services:
     buildCommand: npm install
     startCommand: npm run start:prod
     envVars:
+      - key: NODE_VERSION
+        value: 20.17.0
       - key: NODE_ENV
         value: production
       - key: OPENAI_STUB
