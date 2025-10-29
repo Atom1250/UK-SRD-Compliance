@@ -124,12 +124,14 @@ const createEmptySessionData = (sessionId) => ({
   additional_notes: ""
 });
 
-export const createSession = ({ ip } = {}) => {
+export const createSession = ({ ip, ownerId = null, ownerRole = null } = {}) => {
   const id = randomUUID();
   const timestamp = new Date().toISOString();
 
   const session = {
     id,
+    ownerId,
+    ownerRole,
     stage: CONVERSATION_STAGES[0],
     createdAt: timestamp,
     updatedAt: timestamp,

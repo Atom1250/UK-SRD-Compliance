@@ -16,6 +16,35 @@ A Node.js-based conversational AI system that guides UK financial planning clien
 
 **For local development and testing, see [QUICKSTART.md](QUICKSTART.md) for a 5-minute setup guide.**
 
+## Authentication & role-based portals
+
+All runtime entry points now require a valid login. Sessions are automatically
+tagged with the authenticated account so personal data stays scoped to the
+correct user.
+
+- **Client portal** (`/client.html`): interview experience without the stage
+  tracker or captured-data pane. Ideal for end-clients completing the ESG
+  questionnaire.
+- **Advisor workspace** (`/advisor.html`): full conversation tooling, structured
+  data capture, and case management utilities for regulated advisers.
+- **Admin dashboard** (`/admin.html`): MI overview that surfaces guardrails,
+  cache metrics, alerts, and system telemetry.
+
+### Default credentials
+
+Development builds ship with sample accounts stored in
+`server/data/users.json`:
+
+| Role | Username | Password |
+| --- | --- | --- |
+| Admin | `admin@example.com` | `AdminPass123!` |
+| Advisor | `advisor@example.com` | `AdvisorPass123!` |
+| Client | `client@example.com` | `ClientPass123!` |
+
+> ⚠️ Replace these records before any production deployment. Update the JSON
+> file or extend `server/state/userStore.js` to integrate with your identity
+> provider of choice.
+
 ### Prerequisites
 
 - Node.js 18.x or 20.x (ensure the runtime is < 22 due to native module support)
