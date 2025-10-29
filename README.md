@@ -148,6 +148,20 @@ For complete configuration options, see the environment templates:
 - [.env.development.template](.env.development.template)
 - [.env.production.template](.env.production.template)
 
+### Using GitHub Secrets for OpenAI Access
+
+If you run the test suite or other automated tasks from GitHub Actions, store your real
+OpenAI key as a repository secret so the workflows can authenticate against the API:
+
+1. In GitHub, navigate to **Settings → Secrets and variables → Actions → New repository secret**.
+2. Create a secret named `OPENAI_API_KEY` and paste your production key as the value.
+3. The included workflow in `.github/workflows/openai-ci.yml` reads the secret and sets
+   `OPENAI_STUB=false`, allowing `npm test` to exercise the live OpenAI integration.
+4. Dispatch the workflow manually or trigger it by pushing to `main`/opening a pull request.
+
+Workflows will fail fast with a clear error message if the secret is not defined, preventing
+accidental runs without valid credentials.
+
 ## Deployment
 
 ### Development Deployment
