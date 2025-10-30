@@ -1,8 +1,14 @@
-// Educational PDF Generator
-// Generates comprehensive PDF resources for ESG education modules
+// Educational PDF Generator aligned with ESG & SDR Educational Pack v2.0
+// Produces single-module explainers and a comprehensive pack using the
+// metadata and content defined in educationModules.js
 
 import { createHash } from "node:crypto";
-import { EDUCATION_MODULES } from '../state/educationModules.js';
+import {
+  EDUCATION_MODULES,
+  EDUCATION_PACK_METADATA,
+  MICRO_MODULES,
+  EDUCATION_INTENTS
+} from "../state/educationModules.js";
 
 const escapePdfText = (text) =>
   text
@@ -11,19 +17,10 @@ const escapePdfText = (text) =>
     .replace(/\)/g, "\\)")
     .replace(/\r?\n/g, "\\n");
 
-const buildEducationalPdfBuffer = (moduleTitle, content) => {
-  const lines = [
-    `ESG Education Pack: ${moduleTitle}`,
-    "",
-    "Prepared by ESG Client Interview Bot",
-    "Compliant with FCA Consumer Duty and SDR Requirements",
-    "",
-    "=" * 60,
-    "",
-    ...content.split('\n')
-  ];
+const buildEducationalPdfBuffer = (title, contentLines) => {
+  const lines = Array.isArray(contentLines) ? contentLines : contentLines.split("\n");
 
-  const contentLines = [
+  const contentStreamParts = [
     "BT",
     "/F1 12 Tf",
     "14 TL",
@@ -32,14 +29,14 @@ const buildEducationalPdfBuffer = (moduleTitle, content) => {
 
   lines.forEach((line, index) => {
     if (index > 0) {
-      contentLines.push("T*");
+      contentStreamParts.push("T*");
     }
-    contentLines.push(`(${escapePdfText(line)}) Tj`);
+    contentStreamParts.push(`(${escapePdfText(line)}) Tj`);
   });
 
-  contentLines.push("ET");
+  contentStreamParts.push("ET");
 
-  const contentStream = contentLines.join("\n");
+  const contentStream = contentStreamParts.join("\n");
   const contentLength = Buffer.byteLength(contentStream, "utf8");
 
   const objects = [];
@@ -56,8 +53,8 @@ const buildEducationalPdfBuffer = (moduleTitle, content) => {
   addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
   addObject(`<< /Length ${contentLength} >>\nstream\n${contentStream}\nendstream`);
 
-  const xref = [0];
   let body = "%PDF-1.4\n";
+  const xref = [0];
 
   objects.forEach((object, index) => {
     const position = Buffer.byteLength(body, "utf8");
@@ -83,145 +80,179 @@ const buildEducationalPdfBuffer = (moduleTitle, content) => {
   return Buffer.from(body, "utf8");
 };
 
-export const generateEducationalPdf = (moduleTitle) => {
-  const module = EDUCATION_MODULES.find(m => m.title === moduleTitle);
+const buildDisclaimers = () => [
+  "DISCLAIMERS",
+  ...EDUCATION_PACK_METADATA.disclaimers,
+  "Anti-greenwashing: claims must be correct, clear, complete and fair; visuals must not over-imply sustainability.",
+  "Trade-offs: thematic or exclusionary strategies can impact diversification, risk/return and liquidity.",
+  "Suitability & target market: apply COBS 9A and PROD 3 duties before acting on this information.",
+  "Updates: sustainability data, labels and disclosures may change over time."
+];
+
+const formatModuleForPdf = (module) => [
+  `${EDUCATION_PACK_METADATA.name}`,
+  `Module: ${module.title}`,
+  `Pack version: ${EDUCATION_PACK_METADATA.version} (${EDUCATION_PACK_METADATA.published_at})`,
+  "Prepared for: ESG Client Interview Bot",
+  "",
+  "SUMMARY",
+  module.summary,
+  "",
+  "DETAILED EXPLANATION",
+  module.detailed_explanation || "Detailed explanation not available for this module.",
+  "",
+  "KEY INSIGHTS",
+  module.deep_link ? `Deep link: ${module.deep_link}` : "Deep link: n/a",
+  module.category ? `Category: ${module.category}` : "",
+  module.comprehension_check ? `Comprehension check: ${module.comprehension_check}` : "",
+  "",
+  "REGULATORY CONTEXT",
+  "- FCA Consumer Duty: fair, clear and not misleading customer information.",
+  "- FCA SDR labels and anti-greenwashing guidance (FG24/3).",
+  "- Suitability (COBS 9A) and Product Governance (PROD 3) obligations for advisers.",
+  "",
+  "NEXT STEPS",
+  "- Discuss how this topic affects your objectives and preferences with your adviser.",
+  "- Request supporting disclosures or PDF appendices if you need more depth.",
+  "- Confirm any exclusions, trade-offs or monitoring preferences for your record.",
+  "",
+  ...buildDisclaimers(),
+  "",
+  `Generated: ${new Date().toISOString()}`,
+  `Compliance reference: ${module.slug.toUpperCase().replace(/[^A-Z0-9]+/g, '-')}-${EDUCATION_PACK_METADATA.version}`
+];
+
+export const generateEducationalPdf = (moduleSlug) => {
+  const module = EDUCATION_MODULES.find((m) => m.slug === moduleSlug);
   if (!module) {
-    throw new Error(`Educational module "${moduleTitle}" not found`);
+    throw new Error(`Educational module slug "${moduleSlug}" not found`);
   }
 
-  const content = `
-SUMMARY
-${module.summary}
-
-DETAILED EXPLANATION
-${module.detailed_explanation || 'Detailed explanation not available for this module.'}
-
-KEY CONCEPTS
-${module.category ? `Category: ${module.category.replace(/_/g, ' ').toUpperCase()}` : ''}
-
-REGULATORY CONTEXT
-This information is provided in compliance with:
-- FCA Consumer Duty requirements for clear, fair treatment
-- FCA Sustainability Disclosure Requirements (SDR)
-- Anti-Greenwashing Rule requirements for evidence-based claims
-
-COMPREHENSION CHECK
-${module.comprehension_check || 'No comprehension check available for this module.'}
-
-NEXT STEPS
-- Review this information carefully
-- Discuss any questions with your advisor
-- Consider how this relates to your investment objectives
-- Ask for additional resources if needed
-
-DISCLAIMER
-This educational material is for informational purposes only and does not constitute investment advice. 
-All investment decisions should be made in consultation with a qualified financial advisor after 
-considering your individual circumstances, objectives, and risk tolerance.
-
-Generated: ${new Date().toISOString()}
-Module Version: 1.0
-Compliance Reference: ESG-EDU-${moduleTitle.replace(/\s+/g, '-').toUpperCase()}
-`;
-
-  const pdfBuffer = buildEducationalPdfBuffer(moduleTitle, content);
+  const pdfBuffer = buildEducationalPdfBuffer(module.title, formatModuleForPdf(module));
   const hash = createHash("sha256").update(pdfBuffer).digest("hex");
 
   return {
     pdfBuffer,
     hash,
-    filename: `esg-education-${moduleTitle.replace(/\s+/g, '-').toLowerCase()}.pdf`,
-    title: `ESG Education: ${moduleTitle}`,
+    filename: `esg-education-${module.slug}.pdf`,
+    title: `${EDUCATION_PACK_METADATA.name} — ${module.title}`,
     generated_at: new Date().toISOString()
   };
 };
+
+const buildMicroModuleSummary = () => [
+  "MICRO-MODULE QUICK REPLIES",
+  ...MICRO_MODULES.map((micro) => `- ${micro.title}: ${micro.reply}`)
+];
 
 export const generateComprehensiveEducationPack = () => {
-  const packContent = `
-ESG INVESTMENT EDUCATION PACK
-Comprehensive Guide to Sustainable Investing
+  const tableOfContents = [
+    "ESG INVESTMENT EDUCATION PACK",
+    `${EDUCATION_PACK_METADATA.name}`,
+    `Version ${EDUCATION_PACK_METADATA.version} (${EDUCATION_PACK_METADATA.published_at})`,
+    "",
+    "TABLE OF CONTENTS",
+    "1. Micro-modules (short replies)",
+    "2. Intents & responses (Codex routing)",
+    "3. Deep-dive educational content",
+    "   3.1 What is ESG?",
+    "   3.2 SDR Labels (UK FCA)",
+    "   3.3 Anti-Greenwashing (FG24/3)",
+    "   3.4 KBS Investment Choices (Preference Pathway)",
+    "   3.5 How fund managers decide ‘sustainable’ investments",
+    "   3.6 Suitability (COBS 9A)",
+    "   3.7 Product Governance (PROD 3)",
+    "   3.8 Disclosures & design for understanding",
+    "   3.9 Glossary",
+    "4. Appendix — PDF builder sections",
+    "5. KBS records & templates mapping",
+    "6. Disclaimers & compliance guardrails",
+    "7. Sources"
+  ];
 
-TABLE OF CONTENTS
-1. Fundamentals
-   - ESG Basics
-   - Governance Factors
+  const moduleSections = EDUCATION_MODULES.map((module) => [
+    "",
+    module.title.toUpperCase(),
+    "=".repeat(module.title.length),
+    "",
+    `Summary: ${module.summary}`,
+    "",
+    module.detailed_explanation ? module.detailed_explanation : "Detailed explanation not provided.",
+    "",
+    module.comprehension_check ? `Key question: ${module.comprehension_check}` : "",
+    "─".repeat(60)
+  ]).flat();
 
-2. Regulatory Framework
-   - FCA SDR Labels
-   - Anti-Greenwashing Rules
-   - Product Governance
+  const packContent = [
+    ...tableOfContents,
+    "",
+    ...buildMicroModuleSummary(),
+    "",
+    "INTENTS & RESPONSES",
+    ...EDUCATION_INTENTS.map((intent) => {
+      const quickReplies = intent.quick_replies?.length ? `Quick replies: ${intent.quick_replies.join(', ')}` : "";
+      return [
+        `Intent: ${intent.intent}`,
+        `Utterances: ${intent.utterances.join('; ')}`,
+        `Reply: ${intent.reply_short}`,
+        intent.deep_link ? `Deep link: ${intent.deep_link}` : "",
+        quickReplies,
+        ""
+      ];
+    }).flat(),
+    "DEEP-DIVE CONTENT",
+    ...moduleSections,
+    "",
+    "APPENDIX — PDF BUILDER SECTIONS",
+    "1. What ESG is — and is not",
+    "2. UK SDR labels (client-friendly overview)",
+    "3. Anti-Greenwashing (FG24/3)",
+    "4. Investment choices (KBS Preference Pathway)",
+    "5. How fund managers decide",
+    "6. Suitability (COBS 9A)",
+    "7. Product governance (PROD 3)",
+    "8. Designing disclosures",
+    "9. Key client notices",
+    "",
+    "KBS RECORDS & TEMPLATES MAPPING",
+    "- Informed Choice: Preference Pathway (client guide)",
+    "- Preference Pathway Record (client & adviser)",
+    "- Anti-Greenwashing Checklist (compliance)",
+    "",
+    ...buildDisclaimers(),
+    "",
+    "SOURCES (INTERNAL REFERENCE)",
+    "- UK FCA: Sustainable investment labels & anti-greenwashing",
+    "- UK FCA: FG24/3 Anti-Greenwashing Guidance",
+    "- UK FCA: Occasional Paper 62 (behavioural disclosure design)",
+    "- FCA Handbook: COBS 9A (suitability)",
+    "- FCA Handbook: PROD 3 (product governance)",
+    "- KBS Preference Pathway documentation",
+    "",
+    `Generated: ${new Date().toISOString()}`,
+    `Pack reference: ${EDUCATION_PACK_METADATA.id.toUpperCase()}-${EDUCATION_PACK_METADATA.version}`
+  ];
 
-3. Investment Approaches
-   - Impact Investing
-   - Focus vs Improvers
-   - Exclusions and Screening
-   - Stewardship and Engagement
-
-4. Key Themes
-   - Climate Change Investing
-   - Social Impact Themes
-   - Biodiversity and Nature
-   - Sustainable Development Goals
-
-5. Risk Considerations
-   - Risks and Trade-offs
-   - Switching Considerations
-
-6. Practical Guidance
-   - How to Choose Sustainable Investments
-   - Working with Your Advisor
-   - Ongoing Monitoring and Review
-
-DETAILED CONTENT
-
-${EDUCATION_MODULES.map(module => `
-${module.title.toUpperCase()}
-${'='.repeat(module.title.length)}
-
-Summary: ${module.summary}
-
-${module.detailed_explanation ? `Detailed Explanation: ${module.detailed_explanation}` : ''}
-
-${module.comprehension_check ? `Key Question: ${module.comprehension_check}` : ''}
-
-${'─'.repeat(60)}
-`).join('\n')}
-
-REGULATORY COMPLIANCE
-This education pack is provided in compliance with:
-- FCA Consumer Duty requirements
-- FCA Sustainability Disclosure Requirements (SDR)
-- Anti-Greenwashing Rule
-- Product governance (PROD 3) requirements
-
-IMPORTANT DISCLAIMERS
-- This is educational material only, not investment advice
-- All investments carry risk and may lose value
-- Past performance does not guarantee future results
-- Seek professional advice before making investment decisions
-- Sustainable investing may involve additional risks and trade-offs
-
-Generated: ${new Date().toISOString()}
-Version: 1.0
-Compliance Reference: ESG-EDU-COMPREHENSIVE-PACK
-`;
-
-  const pdfBuffer = buildEducationalPdfBuffer("Comprehensive ESG Education Pack", packContent);
+  const pdfBuffer = buildEducationalPdfBuffer(
+    "Comprehensive ESG & SDR Education Pack",
+    packContent
+  );
   const hash = createHash("sha256").update(pdfBuffer).digest("hex");
 
   return {
     pdfBuffer,
     hash,
-    filename: "esg-comprehensive-education-pack.pdf",
-    title: "Comprehensive ESG Education Pack",
+    filename: "esg-sdr-education-pack-v2.pdf",
+    title: `${EDUCATION_PACK_METADATA.name} — Comprehensive Pack`,
     generated_at: new Date().toISOString()
   };
 };
 
-// Store educational PDFs (similar to report storage)
 export const storeEducationalPdf = (sessionId, moduleTitle, pdfBuffer) => {
-  // In a production system, this would store to a secure file system or cloud storage
-  // For now, we'll just return a URL pattern
-  const filename = `esg-education-${moduleTitle.replace(/\s+/g, '-').toLowerCase()}.pdf`;
-  return `/api/sessions/${sessionId}/education/${filename}`;
+  const moduleSlug = moduleTitle
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+
+  return `/api/sessions/${sessionId}/education/esg-education-${moduleSlug}.pdf`;
 };
