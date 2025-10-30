@@ -2419,6 +2419,10 @@ const handleEducation = (session, text) => {
     summarised: false
   };
 
+  if (!session.data.disclosures) {
+    session.data.disclosures = { documents: [], agr_disclaimer_presented: false };
+  }
+
   if (!education.acknowledged) {
     if (!yesPatterns.test(text)) {
       return {
@@ -2808,6 +2812,9 @@ const buildSummary = (session) => {
   const profile = session.data.client_profile;
   const prefs = session.data.sustainability_preferences;
   const consent = session.data.consent;
+  const themes = Array.isArray(prefs?.themes) ? prefs.themes : [];
+  const exclusions = Array.isArray(prefs?.exclusions) ? prefs.exclusions : [];
+  const impactGoals = Array.isArray(prefs?.impact_goals) ? prefs.impact_goals : [];
 
   const lines = [];
   lines.push("Here’s what you told me:");
@@ -2829,27 +2836,28 @@ const buildSummary = (session) => {
   lines.push(
     `• Liquidity needs: ${profile.liquidity_needs}`
   );
+  const knowledgeSummary = profile?.knowledge_experience?.summary;
   lines.push(
-    `• Knowledge & experience: ${profile.knowledge_experience.summary}`
+    `• Knowledge & experience: ${knowledgeSummary && knowledgeSummary.trim() ? knowledgeSummary : "—"}`
   );
-  if (profile.financial_situation.provided) {
+  if (profile?.financial_situation?.provided) {
     lines.push(
       `• Financial context: ${profile.financial_situation.notes}`
     );
   }
-  if (prefs.preference_level !== "none") {
+  if ((prefs?.preference_level ?? "none") !== "none") {
     lines.push(
       `• Sustainability preference level: ${prefs.preference_level}`
     );
     lines.push(
-      `• Label interests: ${prefs.labels_interest.join(", ") || "None"}`
+      `• Label interests: ${ensureArray(prefs.labels_interest).join(", ") || "None"}`
     );
-    if (prefs.themes.length) {
-      lines.push(`• Themes: ${prefs.themes.join(", ")}`);
+    if (themes.length) {
+      lines.push(`• Themes: ${themes.join(", ")}`);
     }
-    if (prefs.exclusions.length) {
+    if (exclusions.length) {
       lines.push(
-        `• Exclusions: ${prefs.exclusions
+        `• Exclusions: ${exclusions
           .map((item) =>
             item.threshold != null
               ? `${item.sector} (<${item.threshold}%)`
@@ -2858,8 +2866,8 @@ const buildSummary = (session) => {
           .join(", ")}`
       );
     }
-    if (prefs.impact_goals.length) {
-      lines.push(`• Impact goals: ${prefs.impact_goals.join(", ")}`);
+    if (impactGoals.length) {
+      lines.push(`• Impact goals: ${impactGoals.join(", ")}`);
     }
     lines.push(
       `• Engagement importance: ${prefs.engagement_importance || "Not specified"}`
@@ -2906,6 +2914,7 @@ const handleConfirmation = (session, text) => {
 
   session.data.summary_confirmation.client_summary_confirmed = true;
   session.data.summary_confirmation.confirmed_at = new Date().toISOString();
+  session.data.timestamps.summary_confirmed_at = new Date().toISOString();
   session.context.confirmationAwaiting = false;
   setStage(session, "SEGMENT_G_REPORT");
   return handleReport(session);
@@ -2971,6 +2980,12 @@ const handleReport = (session) => {
   storeReportArtifacts(session.id, artifacts.pdfBuffer);
   session.data.audit.report_hash = artifacts.hash;
   session.data.timestamps.report_generated_at = new Date().toISOString();
+  session.data.report_artifacts = {
+    hash: artifacts.hash,
+    downloadUrl: `/api/sessions/${session.id}/report.pdf`,
+    preview: artifacts.preview,
+    generated_at: session.data.timestamps.report_generated_at
+  };
   session.data.report.preview = artifacts.preview;
   session.data.report.doc_url = `/api/sessions/${session.id}/report.pdf`;
   session.data.report.status = "draft";
@@ -2984,9 +2999,22 @@ const handleReport = (session) => {
   ]);
 };
 
+const handleStructuredReport = (session, content = {}) => {
+  if (!content?.generate) {
+    return {
+      messages: [
+        "Let me know when you're ready and I'll generate the personalised pack (set generate: true)."
+      ]
+    };
+  }
+
+  return handleReport(session);
+};
+
 const handleDelivery = () => ({
   messages: [
-    "This session is complete. Your adviser will review everything and attach any product disclosures shortly."
+    "Your personalised pack remains available to download from the dashboard, including the ESG explainer and disclosure bundle.",
+    "This session is complete. Your adviser will be in touch after reviewing everything with any follow-up or additional product disclosures."
   ]
 });
 
@@ -3406,7 +3434,8 @@ export const handleEvent = async (session, event) => {
       SEGMENT_C_CONSENT: handleStructuredConsent,
       SEGMENT_D_EDUCATION: handleStructuredEducation,
       SEGMENT_E_OPTIONS: handleStructuredOptions,
-      SEGMENT_F_CONFIRMATION: handleStructuredConfirmation
+      SEGMENT_F_CONFIRMATION: handleStructuredConfirmation,
+      SEGMENT_G_REPORT: handleStructuredReport
     };
 
     const handler = structuredHandlers[session.stage];

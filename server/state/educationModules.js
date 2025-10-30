@@ -226,6 +226,7 @@ export const EDUCATION_MODULES = [
     title: "Anti-Greenwashing (FG24/3)",
     keywords: defaultKeywords([
       /anti[- ]?greenwashing/i,
+      /(what is )?greenwashing/i,
       "fair clear not misleading",
       "evidence based claims"
     ]),
