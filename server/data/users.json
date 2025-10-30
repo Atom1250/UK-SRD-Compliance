@@ -1,0 +1,26 @@
+[
+  {
+    "id": "f10762720a003c456f355ef3c9878a17",
+    "username": "admin@example.com",
+    "name": "Admin User",
+    "role": "admin",
+    "salt": "58addaa1f3680a51ece376fad19359b3",
+    "passwordHash": "101462ee35ee98237d272ea6bf21b12b12754a75af3a3868c419250f66a213c6a7b86ff3b281eeb0f7fd87aff8bdcbe6c73f487c8cdfcf2b87d0d3d6d9bd4722"
+  },
+  {
+    "id": "0b03dcb2b18cf60bd02d3c63a4ae53b6",
+    "username": "advisor@example.com",
+    "name": "Advisor User",
+    "role": "advisor",
+    "salt": "489b3afb84aa31798278d7d5e3fc08ae",
+    "passwordHash": "c11fc77df117c5de96a6d7f29591e79dd3c09debe40cc2fabba4609cb865372e8e74691b818dc403d9dcc47a5aeea3999b055870fab1b2a2eb89441399a21627"
+  },
+  {
+    "id": "6def1ecb90f909eb8e27eda6ed9d0506",
+    "username": "client@example.com",
+    "name": "Client User",
+    "role": "client",
+    "salt": "cfa238e976ba61a2a33a357c0ff5757b",
+    "passwordHash": "d2c1021556764372c9c344bf8e9148ef58be78bc7dd662f6949d0860e21f552344424476551afce23aab94a9406ce58002bda5b4719309b07ad4f4b6d6c65496"
+  }
+]

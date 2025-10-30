@@ -36,11 +36,15 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(port, () => {
+server.listen(port, async () => {
   console.log(`Server ready on http://localhost:${port}`);
-  
+
   // Initialize WebSocket session monitor
-  sessionMonitor.initialize(server);
+  try {
+    await sessionMonitor.initialize(server);
+  } catch (error) {
+    console.error('Failed to initialize WebSocket session monitor', error);
+  }
 });
 
 process.on("SIGINT", () => {
