@@ -122,13 +122,13 @@ const formatModuleForPdf = (module) => [
   `Compliance reference: ${module.slug.toUpperCase().replace(/[^A-Z0-9]+/g, '-')}-${EDUCATION_PACK_METADATA.version}`
 ];
 
-export const generateEducationalPdf = (moduleTitle) => {
-  const module = EDUCATION_MODULES.find((m) => m.title === moduleTitle);
+export const generateEducationalPdf = (moduleSlug) => {
+  const module = EDUCATION_MODULES.find((m) => m.slug === moduleSlug);
   if (!module) {
-    throw new Error(`Educational module "${moduleTitle}" not found`);
+    throw new Error(`Educational module slug "${moduleSlug}" not found`);
   }
 
-  const pdfBuffer = buildEducationalPdfBuffer(moduleTitle, formatModuleForPdf(module));
+  const pdfBuffer = buildEducationalPdfBuffer(module.title, formatModuleForPdf(module));
   const hash = createHash("sha256").update(pdfBuffer).digest("hex");
 
   return {

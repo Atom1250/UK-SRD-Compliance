@@ -586,14 +586,12 @@ const handleGetEducationalPdf = (req, res, sessionId, filename) => {
   if (!session) return;
 
   try {
-    // Extract module title from filename
-    const moduleTitle = filename
+    const moduleSlug = filename
       .replace('esg-education-', '')
       .replace('.pdf', '')
-      .replace(/-/g, ' ')
-      .replace(/\b\w/g, l => l.toUpperCase());
+      .trim();
 
-    const pdfArtifact = generateEducationalPdf(moduleTitle);
+    const pdfArtifact = generateEducationalPdf(moduleSlug);
     
     res.writeHead(200, {
       "Content-Type": "application/pdf",
