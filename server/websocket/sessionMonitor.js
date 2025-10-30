@@ -1,7 +1,32 @@
-import { WebSocketServer } from 'ws';
 import { randomUUID } from 'node:crypto';
 import { getSession, getSessionEnhanced } from '../state/sessionStore.js';
 import { validateSessionData } from '../state/validateSession.js';
+
+let WebSocketServer = null;
+let websocketModulePromise = null;
+
+const loadWebSocketServer = () => {
+  if (!websocketModulePromise) {
+    websocketModulePromise = import('ws')
+      .then((module) => {
+        const exported = module?.WebSocketServer ?? module?.default ?? null;
+        if (!exported) {
+          console.warn('WebSocket session monitor disabled: ws package has no WebSocketServer export');
+        }
+        return exported;
+      })
+      .catch((error) => {
+        if (error?.code === 'ERR_MODULE_NOT_FOUND' || error?.code === 'MODULE_NOT_FOUND') {
+          console.log('WebSocket session monitor not available');
+        } else {
+          console.error('Failed to load ws package for session monitor', error);
+        }
+        return null;
+      });
+  }
+
+  return websocketModulePromise;
+};
 
 class SessionMonitor {
   constructor() {
@@ -14,8 +39,20 @@ class SessionMonitor {
     this.setupDefaultAlertRules();
   }
 
-  initialize(server) {
-    this.wss = new WebSocketServer({ 
+  async initialize(server) {
+    if (this.wss) {
+      return;
+    }
+
+    if (!WebSocketServer) {
+      WebSocketServer = await loadWebSocketServer();
+    }
+
+    if (!WebSocketServer) {
+      return;
+    }
+
+    this.wss = new WebSocketServer({
       server,
       path: '/ws/sessions'
     });
