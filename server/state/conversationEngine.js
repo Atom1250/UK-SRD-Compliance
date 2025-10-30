@@ -1177,14 +1177,22 @@ export const handleFreeFormQuery = async (
     
   } catch (error) {
     console.error('Error in handleFreeFormQuery:', error.message);
-    
+
     // Graceful fallback when OpenAI service is unavailable
-    const fallbackMessage = "I'm unable to process that question right now due to a technical issue. " +
+    let fallbackMessage = "I'm unable to process that question right now due to a technical issue. " +
       "An advisor will review your query and follow up with you directly.";
-    
+
+    if (
+      typeof error?.message === "string" &&
+      /openai rejected the compliance request/i.test(error.message)
+    ) {
+      fallbackMessage = "I couldn't reach the OpenAI compliance assistant because the API key looks missing or invalid. " +
+        "I've logged your question for an adviser review while the team updates the OPENAI_API_KEY configuration.";
+    }
+
     // Log the failed query for advisor review
     try {
-      appendSessionArrayEntry(session, "extra_questions", 
+      appendSessionArrayEntry(session, "extra_questions",
         `Failed query (${new Date().toISOString()}): ${trimmed}`);
       appendAdditionalNote(session, 
         `Technical error processing query: ${error.message}`);
@@ -1776,7 +1784,21 @@ const stageResponse = (session, stage, additionalMessages = []) => {
 
 const moveToStage = (session, stage, extraMessages = []) => {
   const messages = stageResponse(session, stage, extraMessages);
-  
+
+  if (
+    stage !== "SEGMENT_A_EXPLANATION" &&
+    session?.data &&
+    typeof session.data === "object"
+  ) {
+    session.data.audit = session.data.audit ?? {};
+    session.data.timestamps = session.data.timestamps ?? {};
+    if (!session.data.audit.explanation_shown) {
+      session.data.audit.explanation_shown = true;
+      session.data.timestamps.explanation_shown_at =
+        session.data.timestamps.explanation_shown_at ?? new Date().toISOString();
+    }
+  }
+
   // Add compliance validation checkpoints when moving between stages
   createComplianceAuditEntry(session, 'stage_transition', {
     from_stage: session.stage,

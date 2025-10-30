@@ -221,11 +221,11 @@ OpenAI API key that powers your GitHub CI workflows.
    - Visit the Render dashboard and choose **New → Blueprint**.
    - Point Render at this repository and select the `render.yaml` blueprint that ships with the
      codebase.
-   - Confirm the defaults (Node runtime, `npm install` build, `npm run start:prod` start command)
-     and create the service.
-   - Render’s build logs may emit a Yarn notice about missing lock files. The blueprint intentionally
-     uses `npm install`, so you can ignore the warning—just keep `package-lock.json` committed and
-     avoid adding a `yarn.lock` file.
+  - Confirm the defaults (Node runtime, `npm ci --omit=dev` build, `npm run start:prod` start
+    command) and create the service.
+  - The blueprint forces an npm-based install, so you should no longer see Yarn warnings about
+    missing lock files. If a deploy still runs Yarn, override the build command to
+    `npm ci --omit=dev` in the Render dashboard to ensure the lock file is respected.
    - If Render selects a newer Node runtime, set the environment variable `NODE_VERSION` to
      `20.17.0` during service creation so dependency builds use a compatible toolchain.
 
@@ -244,10 +244,12 @@ OpenAI API key that powers your GitHub CI workflows.
    - You can adjust the size in `render.yaml` before deploying if you expect higher traffic.
 
 5. **Trigger the first deploy**
-   - Render automatically builds the service after environment variables are saved.
-   - Monitor the deploy logs to confirm dependency installation, database initialization, and
-     OpenAI connectivity all succeed. If you see `better-sqlite3` compilation failures referencing
-     V8 types, double-check that `NODE_VERSION` is set to 20.17.0.
+  - Render automatically builds the service after environment variables are saved.
+  - Monitor the deploy logs to confirm dependency installation, database initialization, and
+    OpenAI connectivity all succeed. If you see `better-sqlite3` compilation failures referencing
+    V8 types, double-check that `NODE_VERSION` is set to 20.17.0. If the chat feature reports that
+    the OpenAI API key is missing or invalid, revisit the service’s environment variables and
+    re-save `OPENAI_API_KEY`.
 
 6. **Validate the deployment**
    - Once Render marks the service as live, visit the public URL and hit `/health` to confirm the

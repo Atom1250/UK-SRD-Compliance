@@ -73,6 +73,30 @@ const parseCookies = (header = "") => {
     }, {});
 };
 
+const recordIntroExplanation = (session) => {
+  if (!session || typeof session !== "object") {
+    return false;
+  }
+
+  const data = session.data;
+  if (!data || typeof data !== "object") {
+    return false;
+  }
+
+  data.audit = data.audit ?? {};
+  data.timestamps = data.timestamps ?? {};
+
+  if (data.audit.explanation_shown) {
+    return false;
+  }
+
+  data.audit.explanation_shown = true;
+  data.timestamps.explanation_shown_at =
+    data.timestamps.explanation_shown_at ?? new Date().toISOString();
+
+  return true;
+};
+
 const getAuthenticatedUser = (req) => {
   if (req.user) {
     return req.user;
@@ -179,6 +203,11 @@ const handleCreateSession = (req, res) => {
     ownerId: req.user.id,
     ownerRole: req.user.role
   });
+
+  if (recordIntroExplanation(session)) {
+    saveSession(session);
+  }
+
   sendJSON(res, 201, {
     session: toPublicSession(session),
     messages: [STAGE_PROMPTS[session.stage]]
@@ -188,6 +217,11 @@ const handleCreateSession = (req, res) => {
 const handleGetSession = (req, res, id) => {
   const session = ensureSession(req, res, id);
   if (!session) return;
+
+  if (recordIntroExplanation(session)) {
+    saveSession(session);
+  }
+
   sendJSON(res, 200, {
     session: toPublicSession(session),
     messages: [STAGE_PROMPTS[session.stage]]
