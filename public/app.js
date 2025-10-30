@@ -24,8 +24,16 @@ const logoutButton = document.getElementById("logout-button");
 const statusSection = document.querySelector(".status");
 const summarySection = document.querySelector(".summary");
 
-if (educationPackContent && educationPackContent.childElementCount === 0) {
-  renderEducationPack(educationPackContent);
+if (educationPackContent) {
+  const alreadyLoaded = educationPackContent.dataset.loaded === "true";
+  const hasPlaceholder = Boolean(
+    educationPackContent.querySelector(".education-pack__loading")
+  );
+
+  if (!alreadyLoaded || hasPlaceholder) {
+    renderEducationPack(educationPackContent);
+    educationPackContent.dataset.loaded = "true";
+  }
 }
 
 const bodyElement = document.body;

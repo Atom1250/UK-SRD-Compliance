@@ -2293,6 +2293,10 @@ export const handleRequest = async (req, res) => {
 
     // WebSocket Management APIs
     if (segments[0] === "websocket") {
+      if (!requireRole(req, res, ["admin"])) {
+        return;
+      }
+
       if (segments[1] === "stats") {
         if (req.method === "GET" && segments.length === 2) {
           handleGetWebSocketStats(res);
