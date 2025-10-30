@@ -77,8 +77,11 @@ npm run dev:stub
 
 2. **Install dependencies**
    ```bash
-   npm install
+   npm ci
    ```
+   If you are developing locally without a clean environment you can fall back to
+   `npm install`, but the CI and Render builds both use the lock file via
+   `npm ci` for reproducible installs.
 
 3. **Configure environment**
    ```bash
@@ -127,6 +130,19 @@ The system guides clients through 8 structured segments:
 6. **Confirmation**: Review and confirmation of captured data
 7. **Report**: Suitability report generation
 8. **Delivery**: Report delivery and completion
+
+### ESG & SDR Educational Pack (v2.0)
+
+- The canonical specification lives in [`educational_pack.md`](educational_pack.md) and
+  is referenced by the conversation engine, PDF generator, and Render-facing
+  documentation. Version 2.0 (dated 2025-10-29) includes refreshed intents,
+  micro-modules, deep dives, appendix text, and compliance guardrails that align
+  with the latest KBS Preference Pathway guidance.
+- The client and adviser portals now render the same pack dynamically. The UI
+  populates the education modal from [`public/educationPackContent.js`](public/educationPackContent.js),
+  ensuring the on-screen content matches the conversational detours and PDF output.
+- When updating the pack, edit both the Markdown source and the front-end module
+  so clients, advisers, and generated reports stay in sync.
 
 ## API Endpoints
 
@@ -207,6 +223,9 @@ OpenAI API key that powers your GitHub CI workflows.
      codebase.
    - Confirm the defaults (Node runtime, `npm install` build, `npm run start:prod` start command)
      and create the service.
+   - Render’s build logs may emit a Yarn notice about missing lock files. The blueprint intentionally
+     uses `npm install`, so you can ignore the warning—just keep `package-lock.json` committed and
+     avoid adding a `yarn.lock` file.
    - If Render selects a newer Node runtime, set the environment variable `NODE_VERSION` to
      `20.17.0` during service creation so dependency builds use a compatible toolchain.
 

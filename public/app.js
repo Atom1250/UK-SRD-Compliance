@@ -1,3 +1,5 @@
+import { renderEducationPack } from "./educationPackContent.js";
+
 const messagesList = document.getElementById("messages");
 const promptText = document.getElementById("current-prompt");
 const stageLabel = document.getElementById("stage");
@@ -14,12 +16,17 @@ const reportDownload = document.getElementById("report-download");
 const stageFormContainer = document.getElementById("stage-form");
 const educationPackToggle = document.getElementById("view-education-pack");
 const educationPackSection = document.getElementById("education-pack");
+const educationPackContent = educationPackSection?.querySelector(".education-pack__content");
 const educationPackClose = document.getElementById("close-education-pack");
 const educationPackReturn = document.getElementById("return-to-questionnaire");
 const userDisplay = document.getElementById("user-display");
 const logoutButton = document.getElementById("logout-button");
 const statusSection = document.querySelector(".status");
 const summarySection = document.querySelector(".summary");
+
+if (educationPackContent && educationPackContent.childElementCount === 0) {
+  renderEducationPack(educationPackContent);
+}
 
 const bodyElement = document.body;
 const REQUIRED_ROLE = bodyElement?.dataset?.role ?? null;
