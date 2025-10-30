@@ -37,7 +37,7 @@ test("onboarding segment validates client type selection", async () => {
   
   assert.strictEqual(session.data.client_profile.client_type, "individual");
   assert.strictEqual(session.context.onboardingStep, 1);
-  assert.ok(result.messages.some(msg => /objectives/i.test(msg)), "Should ask about objectives");
+  assert.ok(result.messages.some(msg => /investment goal/i.test(msg)), "Should ask about investment goal");
 });
 
 test("onboarding segment handles invalid client type", async () => {
@@ -47,7 +47,7 @@ test("onboarding segment handles invalid client type", async () => {
   
   const result = await conversation.handleClientTurn(session, "invalid_type");
   
-  assert.strictEqual(session.data.client_profile.client_type, null);
+  assert.strictEqual(session.data.client_profile.client_type, "");
   assert.strictEqual(session.context.onboardingStep, 0);
   assert.ok(result.messages.some(msg => /individual, joint, trust, or company/i.test(msg)), "Should re-prompt for valid type");
 });
@@ -59,7 +59,7 @@ test("education segment tracks educational requests", async () => {
   session.context.education = { acknowledged: false };
   
   const result = await conversation.handleClientTurn(session, "What is greenwashing?");
-  
+
   assert.ok(session.data.educational_requests.some(req => /greenwashing/i.test(req)), "Should log educational request");
   assert.ok(result.messages.some(msg => /greenwashing/i.test(msg)), "Should provide educational response");
 });
@@ -79,7 +79,7 @@ test("options segment validates impact goals when Impact label selected", async 
   }));
   
   assert.strictEqual(session.stage, "SEGMENT_E_OPTIONS"); // Should not advance
-  assert.ok(result.messages.some(msg => /impact goals/i.test(msg)), "Should request impact goals");
+  assert.ok(result.messages.some(msg => /impact goal/i.test(msg)), "Should request impact goals");
 });
 
 test("confirmation segment validates summary before advancing", async () => {
@@ -89,18 +89,51 @@ test("confirmation segment validates summary before advancing", async () => {
   session.data.client_profile = {
     client_type: "individual",
     objectives: "growth",
-    risk_tolerance: 5
+    horizon_years: 8,
+    risk_tolerance: 5,
+    capacity_for_loss: "medium",
+    liquidity_needs: "Low",
+    knowledge_experience: {
+      summary: "Experienced",
+      instruments: ["funds"],
+      frequency: "monthly",
+      duration: "5 years"
+    },
+    financial_situation: { provided: false }
   };
   session.data.sustainability_preferences = {
     preference_level: "high_level",
-    labels_interest: ["Sustainability: Focus"]
+    labels_interest: ["Sustainability: Focus"],
+    themes: [],
+    exclusions: [],
+    impact_goals: [],
+    engagement_importance: "Standard stewardship",
+    reporting_frequency_pref: "annual",
+    tradeoff_tolerance: "Balanced",
+    educ_pack_sent: true
   };
+  session.data.consent = {
+    data_processing: { granted: true, timestamp: new Date().toISOString() },
+    e_delivery: { granted: true, timestamp: new Date().toISOString() },
+    future_contact: { granted: false, purpose: "" }
+  };
+  session.data.audit.explanation_shown = true;
+  session.data.disclosures.agr_disclaimer_presented = true;
+  session.data.timestamps.explanation_shown_at = new Date().toISOString();
+  session.data.timestamps.consent_recorded_at = new Date().toISOString();
+  session.data.timestamps.education_completed_at = new Date().toISOString();
   
-  const result = await conversation.handleClientTurn(session, "Yes, that's correct");
-  
-  assert.strictEqual(session.stage, "SEGMENT_G_REPORT");
+  const summary = await conversation.handleClientTurn(session, "Yes, that's correct");
+  assert.strictEqual(session.stage, "SEGMENT_F_CONFIRMATION");
+  assert.ok(summary.messages.some(msg => /here’s what you told me/i.test(msg)), "Should present summary for confirmation");
+
+  const confirmation = await conversation.handleClientTurn(session, "Yes");
+
+  assert.strictEqual(session.stage, "SEGMENT_H_DELIVERY");
   assert.ok(session.data.summary_confirmation.client_summary_confirmed, "Should mark summary as confirmed");
-  assert.ok(session.data.timestamps.summary_confirmed_at, "Should record confirmation timestamp");
+  assert.ok(session.data.summary_confirmation.confirmed_at, "Should record confirmation timestamp");
+  assert.ok(session.data.timestamps.summary_confirmed_at, "Should store confirmation timestamp in session timestamps");
+  assert.ok(confirmation.messages.some(msg => /personalised pack/i.test(msg)), "Should confirm report generation is underway");
 });
 
 test("report segment generates PDF and advances to delivery", async () => {
@@ -116,34 +149,47 @@ test("report segment generates PDF and advances to delivery", async () => {
     risk_tolerance: 5,
     capacity_for_loss: "medium",
     liquidity_needs: "Low",
-    knowledge_experience: { summary: "Experienced" },
+    knowledge_experience: {
+      summary: "Experienced",
+      instruments: ["funds"],
+      frequency: "monthly",
+      duration: "5 years"
+    },
     financial_situation: { provided: false }
   };
   session.data.sustainability_preferences = {
     preference_level: "high_level",
-    labels_interest: ["Sustainability: Focus"]
+    labels_interest: ["Sustainability: Focus"],
+    themes: [],
+    exclusions: [],
+    impact_goals: [],
+    engagement_importance: "Standard stewardship",
+    reporting_frequency_pref: "annual",
+    tradeoff_tolerance: "Balanced",
+    educ_pack_sent: true
   };
   session.data.consent = {
-    data_processing: { granted: true, timestamp: new Date().toISOString() }
+    data_processing: { granted: true, timestamp: new Date().toISOString() },
+    e_delivery: { granted: true, timestamp: new Date().toISOString() },
+    future_contact: { granted: false, purpose: "" }
   };
   session.data.advice_outcome = {
     recommendation: "ESG Portfolio",
     rationale: "Suitable for client"
   };
   session.data.summary_confirmation = { client_summary_confirmed: true };
-  session.data.audit = { explanation_shown: true };
-  session.data.timestamps = {
-    explanation_shown_at: new Date().toISOString(),
-    consent_recorded_at: new Date().toISOString(),
-    education_completed_at: new Date().toISOString()
-  };
+  session.data.audit.explanation_shown = true;
+  session.data.disclosures.agr_disclaimer_presented = true;
+  session.data.timestamps.explanation_shown_at = new Date().toISOString();
+  session.data.timestamps.consent_recorded_at = new Date().toISOString();
+  session.data.timestamps.education_completed_at = new Date().toISOString();
   
   const result = await conversation.handleEvent(session, createEvent(session.stage, { generate: true }));
   
   assert.strictEqual(session.stage, "SEGMENT_H_DELIVERY");
   assert.ok(session.data.report_artifacts, "Should generate report artifacts");
   assert.ok(session.data.report_artifacts.hash, "Should include report hash");
-  assert.ok(result.messages.some(msg => /report has been generated/i.test(msg)), "Should confirm report generation");
+  assert.ok(result.messages.some(msg => /personalised pack/i.test(msg)), "Should confirm report generation");
 });
 
 test("delivery segment provides download links and completion", async () => {

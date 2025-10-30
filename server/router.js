@@ -44,10 +44,114 @@ import { getReportArtifact, storeReportArtifacts, getStorageStats, validateDocum
 import { generateReportArtifacts } from "./report/reportGenerator.js";
 import { sessionMonitor } from "./websocket/sessionMonitor.js";
 import { performanceMiddleware } from "./monitoring/performanceMonitor.js";
-import { registerDashboardRoutes } from "./monitoring/dashboardApi.js";
 import logger from "./monitoring/logger.js";
+import {
+  authenticateUser,
+  getUserById
+} from "./state/userStore.js";
+import {
+  createAuthSession,
+  destroySession,
+  getSession as getAuthSession,
+  touchSession,
+  SESSION_COOKIE_NAME,
+  SESSION_TTL_SECONDS
+} from "./state/auth/sessionManager.js";
 
 const API_PREFIX = "/api";
+
+const parseCookies = (header = "") => {
+  return header
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce((acc, part) => {
+      const [key, ...valueParts] = part.split("=");
+      if (!key) return acc;
+      acc[key] = decodeURIComponent(valueParts.join("="));
+      return acc;
+    }, {});
+};
+
+const recordIntroExplanation = (session) => {
+  if (!session || typeof session !== "object") {
+    return false;
+  }
+
+  const data = session.data;
+  if (!data || typeof data !== "object") {
+    return false;
+  }
+
+  data.audit = data.audit ?? {};
+  data.timestamps = data.timestamps ?? {};
+
+  if (data.audit.explanation_shown) {
+    return false;
+  }
+
+  data.audit.explanation_shown = true;
+  data.timestamps.explanation_shown_at =
+    data.timestamps.explanation_shown_at ?? new Date().toISOString();
+
+  return true;
+};
+
+const getAuthenticatedUser = (req) => {
+  if (req.user) {
+    return req.user;
+  }
+
+  const cookies = parseCookies(req.headers?.cookie ?? "");
+  const token = cookies[SESSION_COOKIE_NAME];
+  if (!token) {
+    return null;
+  }
+
+  const authSession = getAuthSession(token);
+  if (!authSession) {
+    return null;
+  }
+
+  const user = getUserById(authSession.userId);
+  if (!user) {
+    destroySession(token);
+    return null;
+  }
+
+  touchSession(token);
+  req.authToken = token;
+  req.user = user;
+  return user;
+};
+
+const hasRequiredRole = (user, roles = []) => {
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  if (!Array.isArray(roles) || roles.length === 0) return true;
+  return roles.includes(user.role);
+};
+
+const requireRole = (req, res, roles = []) => {
+  if (!hasRequiredRole(req.user, roles)) {
+    sendJSON(res, 403, { error: "Forbidden" });
+    return false;
+  }
+  return true;
+};
+
+const canAccessSession = (session, user) => {
+  if (!session || !user) return false;
+  if (user.role === "admin") return true;
+  if (!session.ownerId) return false;
+  return session.ownerId === user.id;
+};
+
+const filterSessionsForUser = (sessions, user) => {
+  if (!Array.isArray(sessions)) return [];
+  if (user?.role === "admin") return sessions;
+  return sessions.filter((session) => session.ownerId && session.ownerId === user?.id);
+};
 
 const readBody = async (req) => {
   if (req.method === "GET" || req.method === "HEAD") {
@@ -75,26 +179,49 @@ const readBody = async (req) => {
   }
 };
 
-const ensureSession = (res, id) => {
+const ensureSession = (req, res, id) => {
   const session = getSession(id);
   if (!session) {
     sendJSON(res, 404, { error: "Session not found" });
+    return null;
+  }
+
+  if (!canAccessSession(session, req.user)) {
+    sendJSON(res, 403, { error: "Forbidden" });
     return null;
   }
   return session;
 };
 
 const handleCreateSession = (req, res) => {
-  const session = createSession({ ip: req.socket.remoteAddress });
+  if (!requireRole(req, res, ["client", "advisor"])) {
+    return;
+  }
+
+  const session = createSession({
+    ip: req.socket.remoteAddress,
+    ownerId: req.user.id,
+    ownerRole: req.user.role
+  });
+
+  if (recordIntroExplanation(session)) {
+    saveSession(session);
+  }
+
   sendJSON(res, 201, {
     session: toPublicSession(session),
     messages: [STAGE_PROMPTS[session.stage]]
   });
 };
 
-const handleGetSession = (res, id) => {
-  const session = ensureSession(res, id);
+const handleGetSession = (req, res, id) => {
+  const session = ensureSession(req, res, id);
   if (!session) return;
+
+  if (recordIntroExplanation(session)) {
+    saveSession(session);
+  }
+
   sendJSON(res, 200, {
     session: toPublicSession(session),
     messages: [STAGE_PROMPTS[session.stage]]
@@ -102,7 +229,11 @@ const handleGetSession = (res, id) => {
 };
 
 const handleAppendEvent = async (req, res, id) => {
-  const session = ensureSession(res, id);
+  if (!requireRole(req, res, ["client", "advisor"])) {
+    return;
+  }
+
+  const session = ensureSession(req, res, id);
   if (!session) return;
 
   const body = await readBody(req);
@@ -152,6 +283,10 @@ const handleAppendEvent = async (req, res, id) => {
 };
 
 const handleChat = async (req, res) => {
+  if (!requireRole(req, res, ["client", "advisor"])) {
+    return;
+  }
+
   const body = await readBody(req);
   const sessionId = body.session_id;
   const message = typeof body.message === "string" ? body.message.trim() : "";
@@ -166,7 +301,7 @@ const handleChat = async (req, res) => {
     return;
   }
 
-  const session = ensureSession(res, sessionId);
+  const session = ensureSession(req, res, sessionId);
   if (!session) return;
 
   try {
@@ -185,7 +320,11 @@ const handleChat = async (req, res) => {
 };
 
 const handleMultiModalInput = async (req, res, sessionId) => {
-  const session = ensureSession(res, sessionId);
+  if (!requireRole(req, res, ["client", "advisor"])) {
+    return;
+  }
+
+  const session = ensureSession(req, res, sessionId);
   if (!session) return;
 
   const body = await readBody(req);
@@ -215,16 +354,20 @@ const handleMultiModalInput = async (req, res, sessionId) => {
   }
 };
 
-const handleGetSessionAnalytics = (res, sessionId) => {
-  const session = ensureSession(res, sessionId);
+const handleGetSessionAnalytics = async (req, res, sessionId) => {
+  if (!requireRole(req, res, ["client", "advisor"])) {
+    return;
+  }
+
+  const session = ensureSession(req, res, sessionId);
   if (!session) return;
 
   try {
-    const { generateConversationSummary, analyzeConversationEffectiveness } = require("./state/conversationAnalytics.js");
-    
+    const { generateConversationSummary, analyzeConversationEffectiveness } = await import("./state/conversationAnalytics.js");
+
     const summary = generateConversationSummary(session);
     const effectiveness = analyzeConversationEffectiveness(session);
-    
+
     const analytics = {
       sessionId,
       summary,
@@ -245,8 +388,12 @@ const handleGetSessionAnalytics = (res, sessionId) => {
   }
 };
 
-const handleValidate = (res, id) => {
-  const session = ensureSession(res, id);
+const handleValidate = (req, res, id) => {
+  if (!requireRole(req, res, ["client", "advisor"])) {
+    return;
+  }
+
+  const session = ensureSession(req, res, id);
   if (!session) return;
   const validation = validateSessionData(session);
   sendJSON(res, 200, {
@@ -258,7 +405,7 @@ const handleValidate = (res, id) => {
 const handleReportGeneration = async (req, res) => {
   const body = await readBody(req);
   const sessionId = body.session_id;
-  const session = ensureSession(res, sessionId);
+  const session = ensureSession(req, res, sessionId);
   if (!session) return;
 
   const validation = validateSessionData(session);
@@ -326,9 +473,13 @@ const handleReportGeneration = async (req, res) => {
 };
 
 const handleCreateEnvelope = async (req, res) => {
+  if (!requireRole(req, res, ["advisor"])) {
+    return;
+  }
+
   const body = await readBody(req);
   const sessionId = body.session_id;
-  const session = ensureSession(res, sessionId);
+  const session = ensureSession(req, res, sessionId);
   if (!session) return;
 
   const signUrl = `https://example.com/sign/${session.id}`;
@@ -348,7 +499,7 @@ const handleCreateEnvelope = async (req, res) => {
 const handleEnvelopeWebhook = async (req, res) => {
   const body = await readBody(req);
   const sessionId = body.session_id;
-  const session = ensureSession(res, sessionId);
+  const session = ensureSession(req, res, sessionId);
   if (!session) return;
 
   if (body.status === "completed" && body.signed_url) {
@@ -360,8 +511,12 @@ const handleEnvelopeWebhook = async (req, res) => {
   sendText(res, 202, "Webhook received");
 };
 
-const handleListCases = (res) => {
-  const cases = listSessions().map((session) => ({
+const handleListCases = (req, res) => {
+  if (!requireRole(req, res, ["advisor"])) {
+    return;
+  }
+
+  const cases = filterSessionsForUser(listSessions(), req.user).map((session) => ({
     id: session.id,
     stage: session.stage,
     updatedAt: session.updatedAt,
@@ -373,14 +528,22 @@ const handleListCases = (res) => {
   sendJSON(res, 200, { cases });
 };
 
-const handleGetCase = (res, id) => {
-  const session = ensureSession(res, id);
+const handleGetCase = (req, res, id) => {
+  if (!requireRole(req, res, ["advisor"])) {
+    return;
+  }
+
+  const session = ensureSession(req, res, id);
   if (!session) return;
   sendJSON(res, 200, { case: toPublicSession(session) });
 };
 
 const handlePatchCase = async (req, res, id) => {
-  const session = ensureSession(res, id);
+  if (!requireRole(req, res, ["advisor"])) {
+    return;
+  }
+
+  const session = ensureSession(req, res, id);
   if (!session) return;
 
   const body = await readBody(req);
@@ -429,12 +592,13 @@ const handlePatchCase = async (req, res, id) => {
   sendJSON(res, 200, { case: toPublicSession(session) });
 };
 
-const handleGetComplianceSummary = (res, sessionId) => {
-  const session = getSession(sessionId);
-  if (!session) {
-    sendJSON(res, 404, { error: "Session not found" });
+const handleGetComplianceSummary = (req, res, sessionId) => {
+  if (!requireRole(req, res, ["advisor", "client"])) {
     return;
   }
+
+  const session = ensureSession(req, res, sessionId);
+  if (!session) return;
 
   try {
     const complianceSummary = generateComplianceSummary(session);
@@ -447,22 +611,21 @@ const handleGetComplianceSummary = (res, sessionId) => {
   }
 };
 
-const handleGetEducationalPdf = (res, sessionId, filename) => {
-  const session = getSession(sessionId);
-  if (!session) {
-    sendJSON(res, 404, { error: "Session not found" });
+const handleGetEducationalPdf = (req, res, sessionId, filename) => {
+  if (!requireRole(req, res, ["advisor", "client"])) {
     return;
   }
 
+  const session = ensureSession(req, res, sessionId);
+  if (!session) return;
+
   try {
-    // Extract module title from filename
-    const moduleTitle = filename
+    const moduleSlug = filename
       .replace('esg-education-', '')
       .replace('.pdf', '')
-      .replace(/-/g, ' ')
-      .replace(/\b\w/g, l => l.toUpperCase());
+      .trim();
 
-    const pdfArtifact = generateEducationalPdf(moduleTitle);
+    const pdfArtifact = generateEducationalPdf(moduleSlug);
     
     res.writeHead(200, {
       "Content-Type": "application/pdf",
@@ -476,8 +639,12 @@ const handleGetEducationalPdf = (res, sessionId, filename) => {
 };
 
 // Investment research and advisor integration handlers
-const handleGetInvestmentResearchSummary = (res) => {
-  const sessions = listSessions();
+const handleGetInvestmentResearchSummary = (req, res) => {
+  if (!requireRole(req, res, ["advisor"])) {
+    return;
+  }
+
+  const sessions = filterSessionsForUser(listSessions(), req.user);
   const researchSummary = {
     total_sessions: sessions.length,
     sessions_with_research: 0,
@@ -531,8 +698,12 @@ const handleGetInvestmentResearchSummary = (res) => {
   sendJSON(res, 200, { research_summary: researchSummary });
 };
 
-const handleGetSessionInvestmentResearch = (res, sessionId) => {
-  const session = ensureSession(res, sessionId);
+const handleGetSessionInvestmentResearch = (req, res, sessionId) => {
+  if (!requireRole(req, res, ["advisor"])) {
+    return;
+  }
+
+  const session = ensureSession(req, res, sessionId);
   if (!session) return;
 
   const researchData = {
@@ -554,8 +725,12 @@ const handleGetSessionInvestmentResearch = (res, sessionId) => {
   sendJSON(res, 200, { research_data: researchData });
 };
 
-const handleGetAdvisorNotifications = (res) => {
-  const sessions = listSessions();
+const handleGetAdvisorNotifications = (req, res) => {
+  if (!requireRole(req, res, ["advisor"])) {
+    return;
+  }
+
+  const sessions = filterSessionsForUser(listSessions(), req.user);
   const allNotifications = [];
 
   sessions.forEach(session => {
@@ -594,10 +769,14 @@ const handleGetAdvisorNotifications = (res) => {
 };
 
 const handleUpdateNotificationStatus = async (req, res, notificationId) => {
+  if (!requireRole(req, res, ["advisor"])) {
+    return;
+  }
+
   const body = await readBody(req);
   const { status, advisor_notes } = body;
-  
-  const sessions = listSessions();
+
+  const sessions = filterSessionsForUser(listSessions(), req.user);
   let notificationFound = false;
 
   for (const session of sessions) {
@@ -627,8 +806,12 @@ const handleUpdateNotificationStatus = async (req, res, notificationId) => {
   }
 };
 
-const handleGetPendingRecommendations = (res) => {
-  const sessions = listSessions();
+const handleGetPendingRecommendations = (req, res) => {
+  if (!requireRole(req, res, ["advisor"])) {
+    return;
+  }
+
+  const sessions = filterSessionsForUser(listSessions(), req.user);
   const pendingRecommendations = [];
 
   sessions.forEach(session => {
@@ -660,8 +843,12 @@ const handleGetPendingRecommendations = (res) => {
   });
 };
 
-const handleGetRecommendationWorkflow = (res, workflowId) => {
-  const sessions = listSessions();
+const handleGetRecommendationWorkflow = (req, res, workflowId) => {
+  if (!requireRole(req, res, ["advisor"])) {
+    return;
+  }
+
+  const sessions = filterSessionsForUser(listSessions(), req.user);
   let workflowFound = null;
   let sessionContext = null;
 
@@ -694,10 +881,14 @@ const handleGetRecommendationWorkflow = (res, workflowId) => {
 };
 
 const handleUpdateRecommendationWorkflow = async (req, res, workflowId) => {
+  if (!requireRole(req, res, ["advisor"])) {
+    return;
+  }
+
   const body = await readBody(req);
   const { status, advisor_recommendations, advisor_notes } = body;
-  
-  const sessions = listSessions();
+
+  const sessions = filterSessionsForUser(listSessions(), req.user);
   let workflowFound = false;
 
   for (const session of sessions) {
@@ -739,6 +930,10 @@ const handleUpdateRecommendationWorkflow = async (req, res, workflowId) => {
 // Comprehensive Session Management API Handlers
 
 const handleListSessionsAdvanced = (req, res) => {
+  if (!requireRole(req, res, ["advisor"])) {
+    return;
+  }
+
   const url = new URL(req.url, `http://${req.headers.host}`);
   const params = url.searchParams;
   
@@ -761,10 +956,11 @@ const handleListSessionsAdvanced = (req, res) => {
   
   try {
     const sessions = filterSessions(filters);
-    const totalCount = listSessions().length;
-    
+    const accessibleSessions = filterSessionsForUser(sessions, req.user);
+    const totalCount = filterSessionsForUser(listSessions(), req.user).length;
+
     const response = {
-      sessions: sessions.map(session => ({
+      sessions: accessibleSessions.map(session => ({
         id: session.id,
         stage: session.stage,
         createdAt: session.createdAt,
@@ -785,7 +981,7 @@ const handleListSessionsAdvanced = (req, res) => {
       })),
       pagination: {
         total: totalCount,
-        returned: sessions.length,
+        returned: accessibleSessions.length,
         offset: filters.offset || 0,
         limit: filters.limit || totalCount
       },
@@ -842,7 +1038,7 @@ const handleSearchSessions = (req, res) => {
 };
 
 const handleGetSessionStatus = (res, sessionId) => {
-  const session = ensureSession(res, sessionId);
+  const session = ensureSession(req, res, sessionId);
   if (!session) return;
   
   try {
@@ -874,7 +1070,7 @@ const handleGetSessionStatus = (res, sessionId) => {
 };
 
 const handleUpdateSessionStatus = async (req, res, sessionId) => {
-  const session = ensureSession(res, sessionId);
+  const session = ensureSession(req, res, sessionId);
   if (!session) return;
   
   const body = await readBody(req);
@@ -939,7 +1135,7 @@ const handleUpdateSessionStatus = async (req, res, sessionId) => {
 };
 
 const handleAddAdvisorNote = async (req, res, sessionId) => {
-  const session = ensureSession(res, sessionId);
+  const session = ensureSession(req, res, sessionId);
   if (!session) return;
   
   const body = await readBody(req);
@@ -998,7 +1194,7 @@ const handleAddAdvisorNote = async (req, res, sessionId) => {
 };
 
 const handleUpdateAdvisorNote = async (req, res, sessionId, noteId) => {
-  const session = ensureSession(res, sessionId);
+  const session = ensureSession(req, res, sessionId);
   if (!session) return;
   
   const body = await readBody(req);
@@ -1051,7 +1247,7 @@ const handleUpdateAdvisorNote = async (req, res, sessionId, noteId) => {
 };
 
 const handleGetSessionProgress = (res, sessionId) => {
-  const session = ensureSession(res, sessionId);
+  const session = ensureSession(req, res, sessionId);
   if (!session) return;
   
   try {
@@ -1515,12 +1711,13 @@ const handleBroadcastMessage = async (req, res) => {
 };
 
 // Enhanced Guardrail and Risk Management Handlers
-const handleGetSessionGuardrails = (res, sessionId) => {
-  const session = getSession(sessionId);
-  if (!session) {
-    sendJSON(res, 404, { error: "Session not found" });
+const handleGetSessionGuardrails = (req, res, sessionId) => {
+  if (!requireRole(req, res, ["advisor"])) {
     return;
   }
+
+  const session = ensureSession(req, res, sessionId);
+  if (!session) return;
 
   try {
     const guardrailResults = evaluateSessionGuardrails(session);
@@ -1536,11 +1733,12 @@ const handleGetSessionGuardrails = (res, sessionId) => {
 };
 
 const handleEvaluateSessionGuardrails = async (req, res, sessionId) => {
-  const session = getSession(sessionId);
-  if (!session) {
-    sendJSON(res, 404, { error: "Session not found" });
+  if (!requireRole(req, res, ["advisor"])) {
     return;
   }
+
+  const session = ensureSession(req, res, sessionId);
+  if (!session) return;
 
   try {
     const guardrailResults = evaluateSessionGuardrails(session);
@@ -1558,12 +1756,13 @@ const handleEvaluateSessionGuardrails = async (req, res, sessionId) => {
   }
 };
 
-const handleGetSessionRiskAssessment = (res, sessionId) => {
-  const session = getSession(sessionId);
-  if (!session) {
-    sendJSON(res, 404, { error: "Session not found" });
+const handleGetSessionRiskAssessment = (req, res, sessionId) => {
+  if (!requireRole(req, res, ["advisor", "client"])) {
     return;
   }
+
+  const session = ensureSession(req, res, sessionId);
+  if (!session) return;
 
   try {
     const riskAssessment = getSessionRiskAssessment(session);
@@ -1578,12 +1777,13 @@ const handleGetSessionRiskAssessment = (res, sessionId) => {
   }
 };
 
-const handleGetRegulatoryCompliance = (res, sessionId) => {
-  const session = getSession(sessionId);
-  if (!session) {
-    sendJSON(res, 404, { error: "Session not found" });
+const handleGetRegulatoryCompliance = (req, res, sessionId) => {
+  if (!requireRole(req, res, ["advisor", "client"])) {
     return;
   }
+
+  const session = ensureSession(req, res, sessionId);
+  if (!session) return;
 
   try {
     const complianceResults = validateSessionRegulatoryCompliance(session);
@@ -1599,8 +1799,12 @@ const handleGetRegulatoryCompliance = (res, sessionId) => {
 };
 
 const handleGetGuardrailReport = (req, res) => {
+  if (!requireRole(req, res, ["admin"])) {
+    return;
+  }
+
   try {
-    const sessions = listSessions();
+    const sessions = filterSessionsForUser(listSessions(), req.user);
     const report = enhancedGuardrailSystem.generateGuardrailReport(sessions);
     
     sendJSON(res, 200, {
@@ -1714,12 +1918,23 @@ const handleReviewRegulatoryChange = async (req, res, changeId) => {
 };
 
 export const handleRequest = async (req, res) => {
+  const startTime = Date.now();
+
   // Apply performance monitoring middleware
   performanceMiddleware(req, res, () => {});
-  
-  // Log request
-  logger.logRequest(req, res, 0); // Will be updated with actual response time
-  
+
+  let logged = false;
+  const logRequest = () => {
+    if (logged) return;
+    logged = true;
+    const responseTime = Date.now() - startTime;
+    logger.logRequest(req, res, responseTime);
+  };
+
+  res.on("finish", logRequest);
+  res.on("close", logRequest);
+  res.on("error", logRequest);
+
   if (req.method === "OPTIONS") {
     sendOptions(res);
     return;
@@ -1742,6 +1957,64 @@ export const handleRequest = async (req, res) => {
       return;
     }
 
+    if (segments[0] === "auth") {
+      if (req.method === "POST" && segments[1] === "login") {
+        const body = await readBody(req);
+        const { username, password } = body;
+
+        if (!username || !password) {
+          sendJSON(res, 400, { error: "username and password are required" });
+          return;
+        }
+
+        const user = authenticateUser(username, password);
+        if (!user) {
+          sendJSON(res, 401, { error: "Invalid credentials" });
+          return;
+        }
+
+        const { token } = createAuthSession(user);
+        res.setHeader(
+          "Set-Cookie",
+          `${SESSION_COOKIE_NAME}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_TTL_SECONDS}`
+        );
+        sendJSON(res, 200, { user });
+        return;
+      }
+
+      if (req.method === "POST" && segments[1] === "logout") {
+        const cookies = parseCookies(req.headers?.cookie ?? "");
+        const token = cookies[SESSION_COOKIE_NAME];
+        if (token) {
+          destroySession(token);
+        }
+        res.setHeader(
+          "Set-Cookie",
+          `${SESSION_COOKIE_NAME}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`
+        );
+        sendJSON(res, 200, { success: true });
+        return;
+      }
+
+      if (req.method === "GET" && segments[1] === "session") {
+        const user = getAuthenticatedUser(req);
+        if (!user) {
+          sendJSON(res, 401, { error: "Not authenticated" });
+          return;
+        }
+        sendJSON(res, 200, { user });
+        return;
+      }
+
+      sendJSON(res, 404, { error: "Route not found" });
+      return;
+    }
+
+    if (!getAuthenticatedUser(req)) {
+      sendJSON(res, 401, { error: "Authentication required" });
+      return;
+    }
+
     if (req.method === "POST" && apiPath === "/sessions") {
       handleCreateSession(req, res);
       return;
@@ -1757,7 +2030,7 @@ export const handleRequest = async (req, res) => {
       const tail = segments.slice(2).join("/");
 
       if (req.method === "GET" && segments.length === 2) {
-        handleGetSession(res, sessionId);
+        handleGetSession(req, res, sessionId);
         return;
       }
 
@@ -1772,12 +2045,12 @@ export const handleRequest = async (req, res) => {
       }
 
       if (req.method === "GET" && tail === "analytics") {
-        handleGetSessionAnalytics(res, sessionId);
+        await handleGetSessionAnalytics(req, res, sessionId);
         return;
       }
 
       if ((req.method === "POST" || req.method === "GET") && tail === "validate") {
-        handleValidate(res, sessionId);
+        handleValidate(req, res, sessionId);
         return;
       }
 
@@ -1830,14 +2103,14 @@ export const handleRequest = async (req, res) => {
 
     if (segments[0] === "adviser" && segments[1] === "cases") {
       if (req.method === "GET" && segments.length === 2) {
-        handleListCases(res);
+        handleListCases(req, res);
         return;
       }
 
       if (segments.length === 3) {
         const caseId = segments[2];
         if (req.method === "GET") {
-          handleGetCase(res, caseId);
+          handleGetCase(req, res, caseId);
           return;
         }
         if (req.method === "PATCH") {
@@ -1851,7 +2124,7 @@ export const handleRequest = async (req, res) => {
     if (segments[0] === "sessions" && segments.length >= 3 && segments[2] === "compliance") {
       const sessionId = segments[1];
       if (req.method === "GET") {
-        handleGetComplianceSummary(res, sessionId);
+        handleGetComplianceSummary(req, res, sessionId);
         return;
       }
     }
@@ -1860,13 +2133,17 @@ export const handleRequest = async (req, res) => {
       const sessionId = segments[1];
       const filename = segments[3];
       if (req.method === "GET") {
-        handleGetEducationalPdf(res, sessionId, filename);
+        handleGetEducationalPdf(req, res, sessionId, filename);
         return;
       }
     }
 
     // Document management endpoints
     if (segments[0] === "admin" && segments[1] === "documents") {
+      if (!requireRole(req, res, ["admin"])) {
+        return;
+      }
+
       if (req.method === "GET" && segments.length === 2) {
         const stats = getStorageStats();
         sendJSON(res, 200, { storage_stats: stats });
@@ -1889,14 +2166,14 @@ export const handleRequest = async (req, res) => {
     // Investment research and advisor integration endpoints
     if (segments[0] === "adviser" && segments[1] === "investment-research") {
       if (req.method === "GET" && segments.length === 2) {
-        handleGetInvestmentResearchSummary(res);
+        handleGetInvestmentResearchSummary(req, res);
         return;
       }
       
       if (segments.length === 3) {
         const sessionId = segments[2];
         if (req.method === "GET") {
-          handleGetSessionInvestmentResearch(res, sessionId);
+          handleGetSessionInvestmentResearch(req, res, sessionId);
           return;
         }
       }
@@ -1904,7 +2181,7 @@ export const handleRequest = async (req, res) => {
 
     if (segments[0] === "adviser" && segments[1] === "notifications") {
       if (req.method === "GET" && segments.length === 2) {
-        handleGetAdvisorNotifications(res);
+        handleGetAdvisorNotifications(req, res);
         return;
       }
       
@@ -1919,14 +2196,14 @@ export const handleRequest = async (req, res) => {
 
     if (segments[0] === "adviser" && segments[1] === "recommendations") {
       if (req.method === "GET" && segments.length === 2) {
-        handleGetPendingRecommendations(res);
+        handleGetPendingRecommendations(req, res);
         return;
       }
       
       if (segments.length === 3) {
         const workflowId = segments[2];
         if (req.method === "GET") {
-          handleGetRecommendationWorkflow(res, workflowId);
+          handleGetRecommendationWorkflow(req, res, workflowId);
           return;
         }
         if (req.method === "PATCH") {
@@ -2016,6 +2293,10 @@ export const handleRequest = async (req, res) => {
 
     // WebSocket Management APIs
     if (segments[0] === "websocket") {
+      if (!requireRole(req, res, ["admin"])) {
+        return;
+      }
+
       if (segments[1] === "stats") {
         if (req.method === "GET" && segments.length === 2) {
           handleGetWebSocketStats(res);
@@ -2055,7 +2336,7 @@ export const handleRequest = async (req, res) => {
     if (segments[0] === "sessions" && segments.length >= 3 && segments[2] === "guardrails") {
       const sessionId = segments[1];
       if (req.method === "GET") {
-        handleGetSessionGuardrails(res, sessionId);
+        handleGetSessionGuardrails(req, res, sessionId);
         return;
       }
       if (req.method === "POST") {
@@ -2067,7 +2348,7 @@ export const handleRequest = async (req, res) => {
     if (segments[0] === "sessions" && segments.length >= 4 && segments[2] === "risk-assessment") {
       const sessionId = segments[1];
       if (req.method === "GET") {
-        handleGetSessionRiskAssessment(res, sessionId);
+        handleGetSessionRiskAssessment(req, res, sessionId);
         return;
       }
     }
@@ -2075,12 +2356,16 @@ export const handleRequest = async (req, res) => {
     if (segments[0] === "sessions" && segments.length >= 3 && segments[2] === "regulatory-compliance") {
       const sessionId = segments[1];
       if (req.method === "GET") {
-        handleGetRegulatoryCompliance(res, sessionId);
+        handleGetRegulatoryCompliance(req, res, sessionId);
         return;
       }
     }
 
     if (segments[0] === "admin" && segments[1] === "guardrails") {
+      if (!requireRole(req, res, ["admin"])) {
+        return;
+      }
+
       if (req.method === "GET" && segments.length === 2) {
         handleGetGuardrailReport(req, res);
         return;
@@ -2088,6 +2373,10 @@ export const handleRequest = async (req, res) => {
     }
 
     if (segments[0] === "admin" && segments[1] === "escalations") {
+      if (!requireRole(req, res, ["admin"])) {
+        return;
+      }
+
       if (req.method === "GET" && segments.length === 2) {
         handleGetEscalationQueue(req, res);
         return;
@@ -2102,6 +2391,10 @@ export const handleRequest = async (req, res) => {
     }
 
     if (segments[0] === "admin" && segments[1] === "regulatory-changes") {
+      if (!requireRole(req, res, ["admin"])) {
+        return;
+      }
+
       if (req.method === "GET" && segments.length === 2) {
         handleGetRegulatoryChanges(req, res);
         return;
@@ -2121,65 +2414,85 @@ export const handleRequest = async (req, res) => {
 
     // Dashboard API routes
     if (segments[0] === "dashboard") {
+      if (!requireRole(req, res, ["admin"])) {
+        return;
+      }
+
       const dashboardPath = segments.slice(1).join("/");
-      
+      const query = Object.fromEntries(url.searchParams.entries());
+      const baseRequest = {
+        query,
+        ip: req.socket?.remoteAddress ?? null,
+        body: {}
+      };
+
+      const respond = (statusCode, payload) => sendJSON(res, statusCode, payload);
+      const createResponseAdapter = () => ({
+        json(payload) {
+          respond(200, payload);
+        },
+        status(statusCode) {
+          return {
+            json(payload) {
+              respond(statusCode, payload);
+            }
+          };
+        }
+      });
+
+      const { dashboardRoutes } = await import("./monitoring/dashboardApi.js");
+
       if (req.method === "GET" && dashboardPath === "health") {
-        const { dashboardRoutes } = await import("./monitoring/dashboardApi.js");
-        await dashboardRoutes.getHealth(req, res);
+        await dashboardRoutes.getHealth(baseRequest, createResponseAdapter());
         return;
       }
-      
+
       if (req.method === "GET" && dashboardPath === "metrics") {
-        const { dashboardRoutes } = await import("./monitoring/dashboardApi.js");
-        await dashboardRoutes.getMetrics(req, res);
+        await dashboardRoutes.getMetrics(baseRequest, createResponseAdapter());
         return;
       }
-      
+
       if (req.method === "GET" && dashboardPath === "alerts") {
-        const { dashboardRoutes } = await import("./monitoring/dashboardApi.js");
-        await dashboardRoutes.getAlerts(req, res);
+        await dashboardRoutes.getAlerts(baseRequest, createResponseAdapter());
         return;
       }
-      
+
       if (req.method === "GET" && dashboardPath === "performance") {
-        const { dashboardRoutes } = await import("./monitoring/dashboardApi.js");
-        await dashboardRoutes.getPerformance(req, res);
+        await dashboardRoutes.getPerformance(baseRequest, createResponseAdapter());
         return;
       }
-      
+
       if (req.method === "GET" && dashboardPath === "sessions") {
-        const { dashboardRoutes } = await import("./monitoring/dashboardApi.js");
-        await dashboardRoutes.getSessions(req, res);
+        await dashboardRoutes.getSessions(baseRequest, createResponseAdapter());
         return;
       }
-      
+
       if (req.method === "GET" && dashboardPath === "logs") {
-        const { dashboardRoutes } = await import("./monitoring/dashboardApi.js");
-        await dashboardRoutes.getLogs(req, res);
+        await dashboardRoutes.getLogs(baseRequest, createResponseAdapter());
         return;
       }
-      
+
       if (req.method === "GET" && dashboardPath === "cache") {
-        const { dashboardRoutes } = await import("./monitoring/dashboardApi.js");
-        await dashboardRoutes.getCache(req, res);
+        await dashboardRoutes.getCache(baseRequest, createResponseAdapter());
         return;
       }
-      
+
       if (req.method === "GET" && dashboardPath === "system") {
-        const { dashboardRoutes } = await import("./monitoring/dashboardApi.js");
-        await dashboardRoutes.getSystem(req, res);
+        await dashboardRoutes.getSystem(baseRequest, createResponseAdapter());
         return;
       }
-      
+
       if (req.method === "POST" && dashboardPath === "cache/clear") {
-        const { dashboardRoutes } = await import("./monitoring/dashboardApi.js");
-        await dashboardRoutes.clearCache(req, res);
+        const body = await readBody(req);
+        baseRequest.body = body;
+        await dashboardRoutes.clearCache(baseRequest, createResponseAdapter());
         return;
       }
-      
+
       if (req.method === "POST" && dashboardPath === "metrics/reset") {
-        const { dashboardRoutes } = await import("./monitoring/dashboardApi.js");
-        await dashboardRoutes.resetMetrics(req, res);
+        const body = await readBody(req);
+        baseRequest.body = body;
+        await dashboardRoutes.resetMetrics(baseRequest, createResponseAdapter());
         return;
       }
     }
