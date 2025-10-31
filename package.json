@@ -34,11 +34,8 @@
   },
   "devDependencies": {
   },
-  "optionalDependencies": {
-    "pg": "^8.11.3"
-  },
   "engines": {
-    "node": ">=18.0.0",
+    "node": ">=18.0.0 <22.0.0",
     "npm": ">=8.0.0"
   }
 }
