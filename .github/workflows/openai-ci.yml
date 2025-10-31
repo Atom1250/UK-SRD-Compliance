@@ -1,0 +1,36 @@
+name: Validate with OpenAI API
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_STUB: "false"
+    steps:
+      - name: Ensure OpenAI API key secret is configured
+        if: ${{ env.OPENAI_API_KEY == '' }}
+        run: |
+          echo 'The OPENAI_API_KEY secret must be configured in the repository settings to run this workflow.'
+          exit 1
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests against OpenAI API
+        run: npm test

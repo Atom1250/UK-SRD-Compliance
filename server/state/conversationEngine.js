@@ -74,12 +74,17 @@ import {
 
 // Import session monitor for real-time notifications
 let sessionMonitor = null;
-try {
-  const { sessionMonitor: monitor } = await import("../websocket/sessionMonitor.js");
-  sessionMonitor = monitor;
-} catch (error) {
-  // WebSocket monitor not available, continue without real-time features
-}
+import("../websocket/sessionMonitor.js")
+  .then(({ sessionMonitor: monitor }) => {
+    sessionMonitor = monitor;
+  })
+  .catch((error) => {
+    if (error?.code === 'ERR_MODULE_NOT_FOUND' || error?.code === 'MODULE_NOT_FOUND') {
+      console.log('WebSocket session monitor not available');
+    } else {
+      console.error('Failed to load WebSocket session monitor', error);
+    }
+  });
 import { validateSessionData } from "./validateSession.js";
 import {
   AUTHORIZED_INVESTMENTS,
@@ -1172,14 +1177,22 @@ export const handleFreeFormQuery = async (
     
   } catch (error) {
     console.error('Error in handleFreeFormQuery:', error.message);
-    
+
     // Graceful fallback when OpenAI service is unavailable
-    const fallbackMessage = "I'm unable to process that question right now due to a technical issue. " +
+    let fallbackMessage = "I'm unable to process that question right now due to a technical issue. " +
       "An advisor will review your query and follow up with you directly.";
-    
+
+    if (
+      typeof error?.message === "string" &&
+      /openai rejected the compliance request/i.test(error.message)
+    ) {
+      fallbackMessage = "I couldn't reach the OpenAI compliance assistant because the API key looks missing or invalid. " +
+        "I've logged your question for an adviser review while the team updates the OPENAI_API_KEY configuration.";
+    }
+
     // Log the failed query for advisor review
     try {
-      appendSessionArrayEntry(session, "extra_questions", 
+      appendSessionArrayEntry(session, "extra_questions",
         `Failed query (${new Date().toISOString()}): ${trimmed}`);
       appendAdditionalNote(session, 
         `Technical error processing query: ${error.message}`);
@@ -1771,7 +1784,21 @@ const stageResponse = (session, stage, additionalMessages = []) => {
 
 const moveToStage = (session, stage, extraMessages = []) => {
   const messages = stageResponse(session, stage, extraMessages);
-  
+
+  if (
+    stage !== "SEGMENT_A_EXPLANATION" &&
+    session?.data &&
+    typeof session.data === "object"
+  ) {
+    session.data.audit = session.data.audit ?? {};
+    session.data.timestamps = session.data.timestamps ?? {};
+    if (!session.data.audit.explanation_shown) {
+      session.data.audit.explanation_shown = true;
+      session.data.timestamps.explanation_shown_at =
+        session.data.timestamps.explanation_shown_at ?? new Date().toISOString();
+    }
+  }
+
   // Add compliance validation checkpoints when moving between stages
   createComplianceAuditEntry(session, 'stage_transition', {
     from_stage: session.stage,
@@ -2414,6 +2441,10 @@ const handleEducation = (session, text) => {
     summarised: false
   };
 
+  if (!session.data.disclosures) {
+    session.data.disclosures = { documents: [], agr_disclaimer_presented: false };
+  }
+
   if (!education.acknowledged) {
     if (!yesPatterns.test(text)) {
       return {
@@ -2803,6 +2834,9 @@ const buildSummary = (session) => {
   const profile = session.data.client_profile;
   const prefs = session.data.sustainability_preferences;
   const consent = session.data.consent;
+  const themes = Array.isArray(prefs?.themes) ? prefs.themes : [];
+  const exclusions = Array.isArray(prefs?.exclusions) ? prefs.exclusions : [];
+  const impactGoals = Array.isArray(prefs?.impact_goals) ? prefs.impact_goals : [];
 
   const lines = [];
   lines.push("Here’s what you told me:");
@@ -2824,27 +2858,28 @@ const buildSummary = (session) => {
   lines.push(
     `• Liquidity needs: ${profile.liquidity_needs}`
   );
+  const knowledgeSummary = profile?.knowledge_experience?.summary;
   lines.push(
-    `• Knowledge & experience: ${profile.knowledge_experience.summary}`
+    `• Knowledge & experience: ${knowledgeSummary && knowledgeSummary.trim() ? knowledgeSummary : "—"}`
   );
-  if (profile.financial_situation.provided) {
+  if (profile?.financial_situation?.provided) {
     lines.push(
       `• Financial context: ${profile.financial_situation.notes}`
     );
   }
-  if (prefs.preference_level !== "none") {
+  if ((prefs?.preference_level ?? "none") !== "none") {
     lines.push(
       `• Sustainability preference level: ${prefs.preference_level}`
     );
     lines.push(
-      `• Label interests: ${prefs.labels_interest.join(", ") || "None"}`
+      `• Label interests: ${ensureArray(prefs.labels_interest).join(", ") || "None"}`
     );
-    if (prefs.themes.length) {
-      lines.push(`• Themes: ${prefs.themes.join(", ")}`);
+    if (themes.length) {
+      lines.push(`• Themes: ${themes.join(", ")}`);
     }
-    if (prefs.exclusions.length) {
+    if (exclusions.length) {
       lines.push(
-        `• Exclusions: ${prefs.exclusions
+        `• Exclusions: ${exclusions
           .map((item) =>
             item.threshold != null
               ? `${item.sector} (<${item.threshold}%)`
@@ -2853,8 +2888,8 @@ const buildSummary = (session) => {
           .join(", ")}`
       );
     }
-    if (prefs.impact_goals.length) {
-      lines.push(`• Impact goals: ${prefs.impact_goals.join(", ")}`);
+    if (impactGoals.length) {
+      lines.push(`• Impact goals: ${impactGoals.join(", ")}`);
     }
     lines.push(
       `• Engagement importance: ${prefs.engagement_importance || "Not specified"}`
@@ -2901,6 +2936,7 @@ const handleConfirmation = (session, text) => {
 
   session.data.summary_confirmation.client_summary_confirmed = true;
   session.data.summary_confirmation.confirmed_at = new Date().toISOString();
+  session.data.timestamps.summary_confirmed_at = new Date().toISOString();
   session.context.confirmationAwaiting = false;
   setStage(session, "SEGMENT_G_REPORT");
   return handleReport(session);
@@ -2966,6 +3002,12 @@ const handleReport = (session) => {
   storeReportArtifacts(session.id, artifacts.pdfBuffer);
   session.data.audit.report_hash = artifacts.hash;
   session.data.timestamps.report_generated_at = new Date().toISOString();
+  session.data.report_artifacts = {
+    hash: artifacts.hash,
+    downloadUrl: `/api/sessions/${session.id}/report.pdf`,
+    preview: artifacts.preview,
+    generated_at: session.data.timestamps.report_generated_at
+  };
   session.data.report.preview = artifacts.preview;
   session.data.report.doc_url = `/api/sessions/${session.id}/report.pdf`;
   session.data.report.status = "draft";
@@ -2979,9 +3021,22 @@ const handleReport = (session) => {
   ]);
 };
 
+const handleStructuredReport = (session, content = {}) => {
+  if (!content?.generate) {
+    return {
+      messages: [
+        "Let me know when you're ready and I'll generate the personalised pack (set generate: true)."
+      ]
+    };
+  }
+
+  return handleReport(session);
+};
+
 const handleDelivery = () => ({
   messages: [
-    "This session is complete. Your adviser will review everything and attach any product disclosures shortly."
+    "Your personalised pack remains available to download from the dashboard, including the ESG explainer and disclosure bundle.",
+    "This session is complete. Your adviser will be in touch after reviewing everything with any follow-up or additional product disclosures."
   ]
 });
 
@@ -3401,7 +3456,8 @@ export const handleEvent = async (session, event) => {
       SEGMENT_C_CONSENT: handleStructuredConsent,
       SEGMENT_D_EDUCATION: handleStructuredEducation,
       SEGMENT_E_OPTIONS: handleStructuredOptions,
-      SEGMENT_F_CONFIRMATION: handleStructuredConfirmation
+      SEGMENT_F_CONFIRMATION: handleStructuredConfirmation,
+      SEGMENT_G_REPORT: handleStructuredReport
     };
 
     const handler = structuredHandlers[session.stage];

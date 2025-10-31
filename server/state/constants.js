@@ -12,7 +12,7 @@ export const CONVERSATION_STAGES = [
 
 export const STAGE_PROMPTS = {
   SEGMENT_A_EXPLANATION:
-    "Welcome! I’ll guide you through ESG investing and collect the information your adviser needs. I’ll explain plainly and send a summary at the end. When you're ready, let me know and we'll begin.",
+    "Welcome! I’ll guide you through ESG investing and collect the information your adviser needs. We’ll move through onboarding questions, capture consent, review the ESG education pack, record your sustainability choices, then confirm everything before I generate your summary for adviser review. I’ll keep each step clear and you can pause or ask questions at any time. When you're ready, let me know and we'll begin.",
   SEGMENT_B_ONBOARDING:
     "Let's capture the core suitability information I need before any recommendation can be made.",
   SEGMENT_C_CONSENT:
