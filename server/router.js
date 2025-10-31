@@ -499,8 +499,23 @@ const handleCreateEnvelope = async (req, res) => {
 const handleEnvelopeWebhook = async (req, res) => {
   const body = await readBody(req);
   const sessionId = body.session_id;
-  const session = ensureSession(req, res, sessionId);
-  if (!session) return;
+
+  if (!sessionId) {
+    sendJSON(res, 400, { error: "session_id is required" });
+    return;
+  }
+
+  const session = getSession(sessionId);
+  if (!session) {
+    sendJSON(res, 404, { error: "Session not found" });
+    return;
+  }
+
+  if (!session.data) {
+    session.data = {};
+  }
+
+  session.data.report = session.data.report ?? {};
 
   if (body.status === "completed" && body.signed_url) {
     session.data.report.status = "completed";
@@ -2010,6 +2025,11 @@ export const handleRequest = async (req, res) => {
       return;
     }
 
+    if (req.method === "POST" && apiPath === "/esign/webhook") {
+      await handleEnvelopeWebhook(req, res);
+      return;
+    }
+
     if (!getAuthenticatedUser(req)) {
       sendJSON(res, 401, { error: "Authentication required" });
       return;
@@ -2093,11 +2113,6 @@ export const handleRequest = async (req, res) => {
 
     if (req.method === "POST" && apiPath === "/esign/envelopes") {
       await handleCreateEnvelope(req, res);
-      return;
-    }
-
-    if (req.method === "POST" && apiPath === "/esign/webhook") {
-      await handleEnvelopeWebhook(req, res);
       return;
     }
 
