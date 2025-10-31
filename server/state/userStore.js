@@ -39,6 +39,16 @@ const sanitizeUser = (user) => {
 
 export const listUsers = () => loadUsers().map((user) => sanitizeUser(user));
 
+export const listUsersByRole = (role) => {
+  if (!role) {
+    return [];
+  }
+
+  return loadUsers()
+    .filter((user) => user.role === role)
+    .map((user) => sanitizeUser(user));
+};
+
 export const getUserById = (id) => {
   const user = loadUsers().find((candidate) => candidate.id === id);
   return sanitizeUser(user);

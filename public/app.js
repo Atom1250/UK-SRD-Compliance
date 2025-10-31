@@ -23,6 +23,10 @@ const userDisplay = document.getElementById("user-display");
 const logoutButton = document.getElementById("logout-button");
 const statusSection = document.querySelector(".status");
 const summarySection = document.querySelector(".summary");
+const advisorSelectionSection = document.getElementById("advisor-selection");
+const advisorForm = document.getElementById("advisor-form");
+const advisorSelect = document.getElementById("advisor-select");
+const advisorError = document.getElementById("advisor-error");
 
 if (educationPackContent) {
   const alreadyLoaded = educationPackContent.dataset.loaded === "true";
@@ -131,6 +135,8 @@ const setComposerDisabled = (disabled) => {
   }
 };
 
+setComposerDisabled(true);
+
 const api = async (path, options = {}) => {
   const response = await fetch(`/api${path}`, {
     method: "GET",
@@ -216,6 +222,94 @@ logoutButton?.addEventListener("click", async () => {
     window.location.href = "/index.html";
   }
 });
+
+const setAdvisorError = (message) => {
+  if (!advisorError) return;
+  if (!message) {
+    advisorError.textContent = "";
+    advisorError.hidden = true;
+    return;
+  }
+
+  advisorError.textContent = message;
+  advisorError.hidden = false;
+};
+
+let advisorSelectionInitialized = false;
+let advisorOptionsLoaded = false;
+
+const loadAdvisorOptions = async () => {
+  if (!advisorSelect) return;
+
+  advisorSelect.disabled = true;
+  setAdvisorError("");
+
+  try {
+    const { advisors } = await api("/advisors");
+    advisorSelect.innerHTML = '<option value="">Select an adviser</option>';
+
+    (advisors || []).forEach((advisor) => {
+      const option = document.createElement("option");
+      option.value = advisor.id;
+      option.textContent = advisor.name || advisor.username || "Adviser";
+      advisorSelect.appendChild(option);
+    });
+
+    advisorOptionsLoaded = true;
+  } catch (error) {
+    setAdvisorError(error.message);
+  } finally {
+    advisorSelect.disabled = false;
+  }
+};
+
+const initializeAdvisorSelection = () => {
+  if (advisorSelectionInitialized) {
+    return;
+  }
+
+  advisorSelectionInitialized = true;
+
+  if (!advisorSelectionSection || !advisorForm || !advisorSelect) {
+    bootstrap();
+    return;
+  }
+
+  advisorSelectionSection.hidden = false;
+  setComposerDisabled(true);
+
+  if (!advisorOptionsLoaded) {
+    loadAdvisorOptions();
+  }
+
+  advisorForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    setAdvisorError("");
+
+    const advisorId = advisorSelect.value;
+    if (!advisorId) {
+      setAdvisorError("Please select an adviser before continuing.");
+      return;
+    }
+
+    const submitButton = advisorForm.querySelector("button[type='submit']");
+    if (submitButton) {
+      submitButton.disabled = true;
+    }
+
+    try {
+      await bootstrap({ advisor_id: advisorId });
+      advisorSelectionSection.hidden = true;
+      setAdvisorError("");
+    } catch (error) {
+      setAdvisorError(error.message);
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+      }
+    }
+  });
+};
 
 let currentSessionId = null;
 let currentSession = null;
@@ -1113,21 +1207,30 @@ const sessionManager = {
   }
 };
 
-const bootstrap = async () => {
+const bootstrap = async (options = {}) => {
   try {
-    const data = await api("/sessions", { method: "POST" });
+    setComposerDisabled(true);
+    const data = await api("/sessions", { method: "POST", body: options });
     currentSessionId = data.session.id;
     setSessionId(currentSessionId);
     setSessionData(data.session);
-    data.messages.forEach((message) => addMessage("assistant", message));
-    
+    (data.messages ?? []).forEach((message) => addMessage("assistant", message));
+
+    if (advisorSelectionSection) {
+      advisorSelectionSection.hidden = true;
+    }
+
     // Initialize multi-modal interface
-    if (window.MultiModalInterface) {
+    if (window.MultiModalInterface && !multiModalInterface) {
       multiModalInterface = new window.MultiModalInterface(sessionManager);
     }
+
+    setComposerDisabled(false);
+    return data.session;
   } catch (error) {
     showError(error.message);
-    sendButton.disabled = true;
+    setComposerDisabled(true);
+    throw error;
   }
 };
 
@@ -1220,7 +1323,13 @@ ensureAuthenticated()
     if (!user) {
       return;
     }
-    bootstrap();
+
+    if (user.role === "client") {
+      initializeAdvisorSelection();
+      return;
+    }
+
+    return bootstrap();
   })
   .catch(() => {
     window.location.href = "/index.html";

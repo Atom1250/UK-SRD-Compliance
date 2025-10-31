@@ -25,6 +25,28 @@
         </p>
       </header>
 
+      <section
+        id="advisor-selection"
+        class="advisor-selection"
+        aria-live="polite"
+        hidden
+      >
+        <h2>Select your adviser</h2>
+        <p>
+          To start a new session, nominate the adviser who will review and support
+          your sustainability journey. Your responses will be shared with your
+          chosen adviser and the compliance team.
+        </p>
+        <form id="advisor-form" class="advisor-selection__form">
+          <label for="advisor-select">Adviser</label>
+          <select id="advisor-select" name="advisor_id" required>
+            <option value="">Select an adviser</option>
+          </select>
+          <button type="submit">Start session</button>
+        </form>
+        <p id="advisor-error" class="advisor-selection__error" role="alert" hidden></p>
+      </section>
+
       <section class="status" aria-live="polite">
         <span class="status__item">
           <span class="status__label">Stage</span>

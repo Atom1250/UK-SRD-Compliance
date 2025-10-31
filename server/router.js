@@ -47,7 +47,8 @@ import { performanceMiddleware } from "./monitoring/performanceMonitor.js";
 import logger from "./monitoring/logger.js";
 import {
   authenticateUser,
-  getUserById
+  getUserById,
+  listUsersByRole
 } from "./state/userStore.js";
 import {
   createAuthSession,
@@ -140,17 +141,36 @@ const requireRole = (req, res, roles = []) => {
   return true;
 };
 
+const getAssignedAdvisorId = (session) =>
+  session?.assignedAdvisorId ?? session?.data?.advisor_assignment?.advisor_id ?? null;
+
 const canAccessSession = (session, user) => {
   if (!session || !user) return false;
   if (user.role === "admin") return true;
-  if (!session.ownerId) return false;
-  return session.ownerId === user.id;
+
+  const advisorId = getAssignedAdvisorId(session);
+
+  if (user.role === "advisor") {
+    if (advisorId && advisorId === user.id) {
+      return true;
+    }
+
+    if (session.ownerRole === "advisor" && session.ownerId === user.id) {
+      return true;
+    }
+  }
+
+  if (session.ownerId && session.ownerId === user.id) {
+    return true;
+  }
+
+  return false;
 };
 
 const filterSessionsForUser = (sessions, user) => {
-  if (!Array.isArray(sessions)) return [];
-  if (user?.role === "admin") return sessions;
-  return sessions.filter((session) => session.ownerId && session.ownerId === user?.id);
+  if (!Array.isArray(sessions) || !user) return [];
+  if (user.role === "admin") return sessions;
+  return sessions.filter((session) => canAccessSession(session, user));
 };
 
 const readBody = async (req) => {
@@ -193,20 +213,103 @@ const ensureSession = (req, res, id) => {
   return session;
 };
 
-const handleCreateSession = (req, res) => {
-  if (!requireRole(req, res, ["client", "advisor"])) {
+const handleCreateSession = async (req, res) => {
+  if (!requireRole(req, res, ["client", "advisor", "admin"])) {
     return;
+  }
+
+  const body = await readBody(req);
+
+  let ownerId = req.user.id;
+  let ownerRole = req.user.role;
+  let advisorId = null;
+
+  const normalizeUserId = (value) => {
+    if (!value || typeof value !== "string") {
+      return null;
+    }
+    return value.trim();
+  };
+
+  if (req.user.role === "client") {
+    const requestedAdvisorId = normalizeUserId(body?.advisor_id);
+    if (!requestedAdvisorId) {
+      sendJSON(res, 400, { error: "advisor_id is required" });
+      return;
+    }
+
+    const advisor = getUserById(requestedAdvisorId);
+    if (!advisor || advisor.role !== "advisor") {
+      sendJSON(res, 400, { error: "advisor_id must reference a valid adviser" });
+      return;
+    }
+
+    advisorId = advisor.id;
+  } else {
+    const requestedAdvisorId = normalizeUserId(body?.advisor_id);
+    if (requestedAdvisorId) {
+      const advisor = getUserById(requestedAdvisorId);
+      if (!advisor || advisor.role !== "advisor") {
+        sendJSON(res, 400, { error: "advisor_id must reference a valid adviser" });
+        return;
+      }
+      advisorId = advisor.id;
+    } else if (req.user.role === "advisor") {
+      advisorId = req.user.id;
+    }
+  }
+
+  const requestedClientId = normalizeUserId(body?.client_id);
+  if (requestedClientId) {
+    const client = getUserById(requestedClientId);
+    if (!client || client.role !== "client") {
+      sendJSON(res, 400, { error: "client_id must reference a valid client" });
+      return;
+    }
+    ownerId = client.id;
+    ownerRole = "client";
   }
 
   const session = createSession({
     ip: req.socket.remoteAddress,
-    ownerId: req.user.id,
-    ownerRole: req.user.role
+    ownerId,
+    ownerRole,
+    advisorId
   });
 
-  if (recordIntroExplanation(session)) {
-    saveSession(session);
+  if (advisorId) {
+    const assignedAdvisor = getUserById(advisorId);
+    const assignmentRecord = {
+      advisor_id: advisorId,
+      advisor_name:
+        assignedAdvisor?.name || assignedAdvisor?.username || "Assigned adviser",
+      advisor_username: assignedAdvisor?.username || "",
+      assigned_at: session.assignedAdvisorAssignedAt,
+      assigned_by: req.user.id
+    };
+
+    session.data.advisor_assignment = {
+      ...session.data.advisor_assignment,
+      ...assignmentRecord
+    };
+
+    if (!Array.isArray(session.data.audit.advisor_assignment_history)) {
+      session.data.audit.advisor_assignment_history = [];
+    }
+
+    if (session.data.audit.advisor_assignment_history.length > 0) {
+      const lastIndex = session.data.audit.advisor_assignment_history.length - 1;
+      session.data.audit.advisor_assignment_history[lastIndex] = {
+        ...session.data.audit.advisor_assignment_history[lastIndex],
+        ...assignmentRecord
+      };
+    } else {
+      session.data.audit.advisor_assignment_history.push(assignmentRecord);
+    }
   }
+
+  recordIntroExplanation(session);
+  saveSession(session);
 
   sendJSON(res, 201, {
     session: toPublicSession(session),
@@ -1052,7 +1155,7 @@ const handleSearchSessions = (req, res) => {
   }
 };
 
-const handleGetSessionStatus = (res, sessionId) => {
+const handleGetSessionStatus = (req, res, sessionId) => {
   const session = ensureSession(req, res, sessionId);
   if (!session) return;
   
@@ -1261,7 +1364,7 @@ const handleUpdateAdvisorNote = async (req, res, sessionId, noteId) => {
   }
 };
 
-const handleGetSessionProgress = (res, sessionId) => {
+const handleGetSessionProgress = (req, res, sessionId) => {
   const session = ensureSession(req, res, sessionId);
   if (!session) return;
   
@@ -2030,13 +2133,26 @@ export const handleRequest = async (req, res) => {
       return;
     }
 
-    if (!getAuthenticatedUser(req)) {
+    const authenticatedUser = getAuthenticatedUser(req);
+
+    if (!authenticatedUser) {
       sendJSON(res, 401, { error: "Authentication required" });
       return;
     }
 
+    if (req.method === "GET" && apiPath === "/advisors") {
+      const advisors = listUsersByRole("advisor").map((advisor) => ({
+        id: advisor.id,
+        username: advisor.username,
+        name: advisor.name
+      }));
+
+      sendJSON(res, 200, { advisors });
+      return;
+    }
+
     if (req.method === "POST" && apiPath === "/sessions") {
-      handleCreateSession(req, res);
+      await handleCreateSession(req, res);
       return;
     }
 
@@ -2246,7 +2362,7 @@ export const handleRequest = async (req, res) => {
     if (segments[0] === "sessions" && segments.length >= 3 && segments[2] === "status") {
       const sessionId = segments[1];
       if (req.method === "GET") {
-        handleGetSessionStatus(res, sessionId);
+        handleGetSessionStatus(req, res, sessionId);
         return;
       }
       if (req.method === "PATCH") {
@@ -2258,7 +2374,7 @@ export const handleRequest = async (req, res) => {
     if (segments[0] === "sessions" && segments.length >= 3 && segments[2] === "progress") {
       const sessionId = segments[1];
       if (req.method === "GET") {
-        handleGetSessionProgress(res, sessionId);
+        handleGetSessionProgress(req, res, sessionId);
         return;
       }
     }
