@@ -21,23 +21,24 @@ This spec extends the structured conversation to support a personable, adaptive,
 ---
 
 ## 3. Educational Layer (On-Demand Modules)
-Core modules:
-- ESG basics
-- FCA SDR labels (Focus, Improvers, Impact, Mixed Goals)
-- Anti-Greenwashing Rule
-- Risks & trade-offs
-- Product governance basics
-- Switching considerations
+Backed by `EDUCATION_PACK_METADATA` (id `esg_sdr_pack_v2_runtime`, version 2.1).
 
-Deep dives (call-outs):
-- Focus vs Improvers — plain-English comparison
-- Exclusions examples — highlight common screens and thresholds
-- Stewardship / engagement — explain active ownership
+Core modules (micro-modules first, then deep dives on demand):
+- ESG basics (Environmental, Social, Governance lens).
+- UK SDR labels — Focus, Improvers, Impact, Mixed Goals, timeline cues, “why no label” statement.
+- Anti-Greenwashing (FG24/3) guardrails.
+- KBS Investment Choices (Conventional, Conventional + ESG, Sustainability pathways, Ethical, Philanthropy).
+- Trade-offs & diversification impacts.
+- Product governance (PROD 3) and suitability (COBS 9A) duties.
+- How fund managers evidence sustainability (objectives, metrics, stewardship, updates).
+- Disclosures & design for understanding (plain numbers, context, single-label presentation).
+- Optional theme modules: Ethical investing, SDGs, stewardship, exclusions.
 
 Format requirements:
-- Deliver a concise summary in chat.
-- Offer the full explainer PDF after each summary: “Would you like the full explainer?”
-- Record which topics were requested for audit.
+- Deliver a concise summary in chat sourced from `EDUCATION_MODULES`.
+- Run module-specific comprehension checks and log via `recordComprehensionResponse()`.
+- Offer the comprehensive PDF (v2.1) after each summary: “Would you like the full education pack (basic + deep dives)?”
+- Record module slug, interaction type, and PDF status for audit and MI.
 
 ---
 

@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: esg-client-interview-bot
+    env: node
+    plan: starter
+    buildCommand: npm ci --omit=dev
+    startCommand: npm run start:prod
+    envVars:
+      - key: NODE_VERSION
+        value: 20.17.0
+      - key: NODE_ENV
+        value: production
+      - key: OPENAI_STUB
+        value: "false"
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: SESSION_DB_PATH
+        value: /var/data/sessions.json
+      - key: OPENAI_API_KEY
+        sync: false
+    disk:
+      name: session-data
+      mountPath: /var/data
+      sizeGB: 1
