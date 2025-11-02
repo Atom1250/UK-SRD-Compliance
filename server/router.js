@@ -2346,6 +2346,9 @@ export const handleRequest = async (req, res) => {
 
     // Comprehensive Session Management APIs
     if (segments[0] === "sessions" && segments[1] === "advanced") {
+      if (!requireRole(req, res, ["advisor", "admin"])) {
+        return;
+      }
       if (req.method === "GET" && segments.length === 2) {
         handleListSessionsAdvanced(req, res);
         return;
@@ -2353,6 +2356,9 @@ export const handleRequest = async (req, res) => {
     }
 
     if (segments[0] === "sessions" && segments[1] === "search") {
+      if (!requireRole(req, res, ["advisor", "admin"])) {
+        return;
+      }
       if (req.method === "GET" && segments.length === 2) {
         handleSearchSessions(req, res);
         return;
@@ -2395,6 +2401,9 @@ export const handleRequest = async (req, res) => {
     }
 
     if (segments[0] === "sessions" && segments[1] === "bulk") {
+      if (!requireRole(req, res, ["advisor", "admin"])) {
+        return;
+      }
       if (req.method === "POST" && segments.length === 2) {
         await handleBulkSessionOperations(req, res);
         return;
@@ -2402,6 +2411,9 @@ export const handleRequest = async (req, res) => {
     }
 
     if (segments[0] === "sessions" && segments[1] === "statistics") {
+      if (!requireRole(req, res, ["advisor", "admin"])) {
+        return;
+      }
       if (req.method === "GET" && segments.length === 2) {
         handleGetSessionStatistics(res);
         return;
@@ -2409,6 +2421,9 @@ export const handleRequest = async (req, res) => {
     }
 
     if (segments[0] === "sessions" && segments[1] === "validate") {
+      if (!requireRole(req, res, ["advisor", "admin"])) {
+        return;
+      }
       if (req.method === "POST" && segments.length === 2) {
         await handleValidateAllSessions(req, res);
         return;
@@ -2416,6 +2431,9 @@ export const handleRequest = async (req, res) => {
     }
 
     if (segments[0] === "sessions" && segments[1] === "attention") {
+      if (!requireRole(req, res, ["advisor", "admin"])) {
+        return;
+      }
       if (req.method === "GET" && segments.length === 2) {
         handleGetSessionsRequiringAttention(req, res);
         return;
