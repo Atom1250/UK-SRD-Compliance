@@ -413,3 +413,13 @@ export const educationPackHtml = `
     </div>
   </section>
 `;
+
+export const renderEducationPack = (container) => {
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = educationPackHtml;
+  container.dataset.packId = EDUCATION_PACK_METADATA.id;
+  container.dataset.packVersion = EDUCATION_PACK_METADATA.version;
+};
