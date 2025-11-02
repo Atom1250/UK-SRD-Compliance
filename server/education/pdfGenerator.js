@@ -1,4 +1,4 @@
-// Educational PDF Generator aligned with ESG & SDR Educational Pack v2.0
+// Educational PDF Generator aligned with the Education Pack (Basic) + Deep-Dives runtime
 // Produces single-module explainers and a comprehensive pack using the
 // metadata and content defined in educationModules.js
 
@@ -82,7 +82,7 @@ const buildEducationalPdfBuffer = (title, contentLines) => {
 
 const buildDisclaimers = () => [
   "DISCLAIMERS",
-  ...EDUCATION_PACK_METADATA.disclaimers,
+  ...EDUCATION_PACK_METADATA.disclaimers_client,
   "Anti-greenwashing: claims must be correct, clear, complete and fair; visuals must not over-imply sustainability.",
   "Trade-offs: thematic or exclusionary strategies can impact diversification, risk/return and liquidity.",
   "Suitability & target market: apply COBS 9A and PROD 3 duties before acting on this information.",
@@ -147,27 +147,33 @@ const buildMicroModuleSummary = () => [
 
 export const generateComprehensiveEducationPack = () => {
   const tableOfContents = [
-    "ESG INVESTMENT EDUCATION PACK",
+    "KBS PREFERENCE PATHWAY EDUCATION PACK",
     `${EDUCATION_PACK_METADATA.name}`,
     `Version ${EDUCATION_PACK_METADATA.version} (${EDUCATION_PACK_METADATA.published_at})`,
     "",
     "TABLE OF CONTENTS",
-    "1. Micro-modules (short replies)",
-    "2. Intents & responses (Codex routing)",
-    "3. Deep-dive educational content",
+    "1. Client disclaimers",
+    "2. Micro-modules (short replies)",
+    "3. Basic level sections",
     "   3.1 What is ESG?",
     "   3.2 SDR Labels (UK FCA)",
-    "   3.3 Anti-Greenwashing (FG24/3)",
-    "   3.4 KBS Investment Choices (Preference Pathway)",
-    "   3.5 How fund managers decide ‘sustainable’ investments",
+    "   3.3 Anti-Greenwashing",
+    "   3.4 Investment Choices — KBS Preference Pathway",
+    "   3.5 How Fund Managers Decide “Sustainable”",
     "   3.6 Suitability (COBS 9A)",
     "   3.7 Product Governance (PROD 3)",
-    "   3.8 Disclosures & design for understanding",
+    "   3.8 Disclosures & Design for Understanding",
     "   3.9 Glossary",
-    "4. Appendix — PDF builder sections",
-    "5. KBS records & templates mapping",
-    "6. Disclaimers & compliance guardrails",
-    "7. Sources"
+    "4. Deep-dive sections",
+    "   4.1 Deep-Dive: ESG",
+    "   4.2 Deep-Dive: SDR Labels",
+    "   4.3 Deep-Dive: Anti-Greenwashing",
+    "   4.4 Deep-Dive: Investment Choices (KBS)",
+    "   4.5 Deep-Dive: How Managers Decide",
+    "   4.6 Deep-Dive: Suitability (COBS 9A)",
+    "   4.7 Deep-Dive: Product Governance (PROD 3)",
+    "   4.8 Deep-Dive: Disclosures & Design",
+    "5. Client-facing intents & runtime configuration"
   ];
 
   const moduleSections = EDUCATION_MODULES.map((module) => [
@@ -183,58 +189,56 @@ export const generateComprehensiveEducationPack = () => {
     "─".repeat(60)
   ]).flat();
 
+  const intentSections = EDUCATION_INTENTS.map((intent) => {
+    const quickReplies = intent.quick_replies?.length ? `Quick replies: ${intent.quick_replies.join(', ')}` : "";
+    const actions = intent.actions?.length
+      ? `Actions: ${intent.actions.map((action) => {
+          const params = { ...action };
+          delete params.type;
+          const suffix = Object.keys(params).length
+            ? ` (${Object.entries(params).map(([key, value]) => `${key}: ${value}`).join(', ')})`
+            : "";
+          return `${action.type}${suffix}`;
+        }).join('; ')}`
+      : "";
+    return [
+      `Intent: ${intent.intent}`,
+      `Utterances: ${intent.utterances.join('; ')}`,
+      `Reply: ${intent.reply_short}`,
+      intent.deep_link ? `Deep link: ${intent.deep_link}` : "",
+      quickReplies,
+      actions,
+      ""
+    ];
+  }).flat();
+
   const packContent = [
     ...tableOfContents,
     "",
+    "CLIENT DISCLAIMERS",
+    ...EDUCATION_PACK_METADATA.disclaimers_client,
+    "",
     ...buildMicroModuleSummary(),
     "",
-    "INTENTS & RESPONSES",
-    ...EDUCATION_INTENTS.map((intent) => {
-      const quickReplies = intent.quick_replies?.length ? `Quick replies: ${intent.quick_replies.join(', ')}` : "";
-      return [
-        `Intent: ${intent.intent}`,
-        `Utterances: ${intent.utterances.join('; ')}`,
-        `Reply: ${intent.reply_short}`,
-        intent.deep_link ? `Deep link: ${intent.deep_link}` : "",
-        quickReplies,
-        ""
-      ];
-    }).flat(),
-    "DEEP-DIVE CONTENT",
+    "BASIC & DEEP-DIVE CONTENT",
     ...moduleSections,
     "",
-    "APPENDIX — PDF BUILDER SECTIONS",
-    "1. What ESG is — and is not",
-    "2. UK SDR labels (client-friendly overview)",
-    "3. Anti-Greenwashing (FG24/3)",
-    "4. Investment choices (KBS Preference Pathway)",
-    "5. How fund managers decide",
-    "6. Suitability (COBS 9A)",
-    "7. Product governance (PROD 3)",
-    "8. Designing disclosures",
-    "9. Key client notices",
+    "CLIENT-FACING INTENTS",
+    ...intentSections,
     "",
-    "KBS RECORDS & TEMPLATES MAPPING",
-    "- Informed Choice: Preference Pathway (client guide)",
-    "- Preference Pathway Record (client & adviser)",
-    "- Anti-Greenwashing Checklist (compliance)",
+    "RUNTIME CONFIGURATION",
+    `Render policy: hide_internal_sections=${EDUCATION_PACK_METADATA.render_policy.hide_internal_sections ? 'true' : 'false'}, client_sections_only=${EDUCATION_PACK_METADATA.render_policy.client_sections_only ? 'true' : 'false'}`,
+    `UI defaults: buttons_style=${EDUCATION_PACK_METADATA.ui_defaults.buttons_style}, return_button_label=${EDUCATION_PACK_METADATA.ui_defaults.return_button_label}`,
+    `State keys: ${EDUCATION_PACK_METADATA.state_model.keys.join(', ')}`,
     "",
     ...buildDisclaimers(),
-    "",
-    "SOURCES (INTERNAL REFERENCE)",
-    "- UK FCA: Sustainable investment labels & anti-greenwashing",
-    "- UK FCA: FG24/3 Anti-Greenwashing Guidance",
-    "- UK FCA: Occasional Paper 62 (behavioural disclosure design)",
-    "- FCA Handbook: COBS 9A (suitability)",
-    "- FCA Handbook: PROD 3 (product governance)",
-    "- KBS Preference Pathway documentation",
     "",
     `Generated: ${new Date().toISOString()}`,
     `Pack reference: ${EDUCATION_PACK_METADATA.id.toUpperCase()}-${EDUCATION_PACK_METADATA.version}`
   ];
 
   const pdfBuffer = buildEducationalPdfBuffer(
-    "Comprehensive ESG & SDR Education Pack",
+    "Education Pack (Basic) + Deep-Dives — Comprehensive",
     packContent
   );
   const hash = createHash("sha256").update(pdfBuffer).digest("hex");
@@ -242,7 +246,7 @@ export const generateComprehensiveEducationPack = () => {
   return {
     pdfBuffer,
     hash,
-    filename: "esg-sdr-education-pack-v2.pdf",
+    filename: "education-pack-basic-deep-dives.pdf",
     title: `${EDUCATION_PACK_METADATA.name} — Comprehensive Pack`,
     generated_at: new Date().toISOString()
   };

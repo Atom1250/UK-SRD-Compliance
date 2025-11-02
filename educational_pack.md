@@ -1,316 +1,396 @@
-id: esg_sdr_pack_v2
-name: "ESG & SDR Educational Pack — KBS Preference Pathway (v2.0)"
-version: "2.0"
-date: "2025-10-29"
+id: esg_sdr_pack_v2_runtime
+name: "Education Pack (Basic) + Deep-Dives — KBS Preference Pathway"
+version: "2.1"
+date: "2025-11-01"
 language: "en-GB"
 owner: "KBS Preference Pathway"
-doc_type: "chatbot_module_spec"
+doc_type: "chatbot_runtime_module"
+render_policy:
+  hide_internal_sections: true
+  client_sections_only: true
 recognition: "This pack recognises the KBS Preference Pathway as the source framework."
-audience: ["retail_investors", "advisers"]
-tone: ["clear", "neutral", "client-friendly"]
-usage:
-  - "Drop-in replacement for prior ESG/SDR bot content"
-  - "One file to feed Codex; includes intents, short answers, deep dives, and PDF appendix"
-routing_defaults:
-  fallback_intent: "help_overview"
-  safety:
-    anti_greenwashing:
-      enforce: true
-      rules: ["correct", "clear", "complete", "fair_comparisons"]
-  disclaimers:
-    - "Educational only; not personal advice."
-    - "Investments can go down as well as up; you may not get back the amount invested."
-    - "Sustainability/ESG data and methodologies evolve over time."
+disclaimers_client:
+  - "Educational only; not personal advice."
+  - "Investments can go down as well as up; you may not get back the amount invested."
+  - "Sustainability/ESG data and methodologies evolve over time."
+ui_defaults:
+  buttons_style: "inline"
+  show_return_button_on_deep_dives: true
+  return_button_label: "⬅ Return to Education Pack"
+state_model:
+  keys:
+    - current_section_id
+    - in_deep_dive
+    - breadcrumb
 
 ---
 
-# Table of Contents
-- [Micro-Modules (short replies)](#micro-modules-short-replies)
-- [Intents & Responses (for Codex routing)](#intents--responses-for-codex-routing)
-- [Deep-Dive Educational Content (anchor-linked)](#deep-dive-educational-content-anchor-linked)
-  - [What is ESG?](#what-is-esg)
-  - [SDR Labels (UK FCA)](#sdr-labels-uk-fca)
-  - [Anti-Greenwashing (FG24/3)](#anti-greenwashing-fg243)
-  - [KBS Investment Choices (Preference Pathway)](#kbs-investment-choices-preference-pathway)
-  - [How Fund Managers Decide “Sustainable” Investments](#how-fund-managers-decide-sustainable-investments)
-  - [Suitability (COBS 9A)](#suitability-cobs-9a)
-  - [Product Governance (PROD 3)](#product-governance-prod-3)
-  - [Disclosures & Design for Understanding](#disclosures--design-for-understanding)
-  - [Glossary](#glossary)
-- [Appendix: PDF Builder Sections (source text)](#appendix-pdf-builder-sections-source-text)
-- [KBS Records & Templates (mapping)](#kbs-records--templates-mapping)
-- [Disclaimers & Compliance Guardrails](#disclaimers--compliance-guardrails)
-- [Sources (for internal reference)](#sources-for-internal-reference)
+# CLIENT_VIEW: Education Pack (Basic Level)
+
+> **Acknowledgement:** This Education Pack draws on and recognises the **KBS Preference Pathway** as the source framework for client education and records.
+
+## Contents
+- [What is ESG?](#what-is-esg)  ▶  [Know more](#deep-dive-esg) 
+- [SDR Labels (UK FCA)](#sdr-labels-uk-fca)  ▶  [Know more](#deep-dive-sdr) 
+- [Anti‑Greenwashing](#anti-greenwashing)  ▶  [Know more](#deep-dive-agw)
+- [Investment Choices — KBS Preference Pathway](#investment-choices--kbs-preference-pathway)  ▶  [Know more](#deep-dive-choices)
+- [How Fund Managers Decide “Sustainable”](#how-fund-managers-decide-sustainable)  ▶  [Know more](#deep-dive-managers)
+- [Suitability (COBS 9A)](#suitability-cobs-9a)  ▶  [Know more](#deep-dive-cobs)
+- [Product Governance (PROD 3)](#product-governance-prod-3)  ▶  [Know more](#deep-dive-prod)
+- [Disclosures & Design for Understanding](#disclosures--design-for-understanding)  ▶  [Know more](#deep-dive-design)
+- [Glossary](#glossary)
 
 ---
 
-## Micro-Modules (short replies)
+## What is ESG?
+**ESG** is a lens for evaluating financially material **Environmental, Social, Governance** factors in investments.  
+- **Environmental:** climate & carbon, resource use, pollution, biodiversity.  
+- **Social:** workforce, supply chains, safety & well‑being, human rights.  
+- **Governance:** board oversight, audit, pay, ethics, controls, cyber.  
+💡 ESG integration alone doesn’t mean a product is “sustainable” or “impact.”
 
-- **ESG basics** → “ESG = Environmental, Social, Governance. It’s a risk‑and‑opportunity lens investors use to assess how companies are run and how they manage environmental & social issues.”
-- **SDR labels** → “UK labels: **Focus**, **Improvers**, **Impact**, **Mixed Goals** — four ways funds can set sustainability objectives.”
-- **Anti‑greenwashing** → “Claims must be **fair, clear, not misleading**. Visuals and comparisons must not over‑imply sustainability; firms should hold evidence.”
-- **Trade‑offs** → “Themes/screens can narrow the investable universe and affect diversification/returns — we’ll flag these so you can decide knowingly.”
-- **Product governance** → “Every fund has a defined **target market**. Recommendations must fit this; outside‑target‑market sales are captured and reviewed.”
+**Buttons:** [Know more](#deep-dive-esg)
 
 ---
 
-## Intents & Responses (for Codex routing)
+## SDR Labels (UK FCA)
+The FCA introduced four optional labels for funds with explicit sustainability goals:  
+- **Focus** — assets that focus on sustainability.  
+- **Improvers** — assets aiming to improve their sustainability over time.  
+- **Impact** — assets providing solutions with an aim to achieve positive, measurable outcomes.  
+- **Mixed Goals** — a mix of Focus/Improvers/Impact strategies.  
 
-> **Implementation note:** Each intent includes *training utterances*, a *short answer*, a *deep‑dive anchor* (for jump navigation), and optional *quick replies*.
+**Buttons:** [Know more](#deep-dive-sdr)
 
-### intent: help_overview
+---
+
+## Anti‑Greenwashing
+Sustainability‑related claims must be: **correct & substantiated, clear, complete (no cherry‑picking), and fair/meaningful** in comparisons. Visuals must not over‑imply sustainability.  
+**Buttons:** [Know more](#deep-dive-agw)
+
+---
+
+## Investment Choices — KBS Preference Pathway
+Choose one or combine: **Conventional**, **Conventional + ESG**, **Sustainability (Improvers / Focus / Impact / Mixed Goals)**, **Ethical**, optional **Philanthropy**.  
+- You can assign different pathways to different products (e.g., ISA vs Pension).  
+- Trade‑offs: narrower themes/screens may affect diversification and risk/return.  
+**Buttons:** [Know more](#deep-dive-choices)
+
+---
+
+## How Fund Managers Decide “Sustainable”
+Managers set objectives/policy, use clear metrics and plain numbers, practice **stewardship** (especially for Improvers), keep evidence, and report progress annually for label users.  
+**Buttons:** [Know more](#deep-dive-managers)
+
+---
+
+## Suitability (COBS 9A)
+Advisers gather information on your **knowledge & experience**, **financial situation/ability to bear loss**, and **objectives/risk tolerance** to make a suitable recommendation. If enough information isn’t obtained, no personal recommendation can be made.  
+**Buttons:** [Know more](#deep-dive-cobs)
+
+---
+
+## Product Governance (PROD 3)
+Manufacturers define a **target market** and distribution strategy; distributors must understand products, set their own target markets, ensure **best interests**, and review arrangements regularly.  
+**Buttons:** [Know more](#deep-dive-prod)
+
+---
+
+## Disclosures & Design for Understanding
+Client‑friendly factsheets with **plain numbers**, clear context, and single‑label focus improve comprehension versus technical documents alone.  
+**Buttons:** [Know more](#deep-dive-design)
+
+---
+
+## Glossary
+- **ESG integration** — factoring E/S/G into investment analysis and risk management.  
+- **Stewardship** — engagement and voting to influence investee companies.  
+- **Theory of change** — how a strategy expects to create measurable outcomes.  
+- **Implied temperature rise** — a portfolio‑level warming pathway metric.  
+- **Relative carbon footprint** — carbon per unit invested vs benchmark.  
+
+---
+
+# DEEP_DIVES (Client View)
+
+## Deep‑Dive: ESG {#id deep-dive-esg}
+- Environmental: climate scenarios, carbon intensity, biodiversity impacts, water use.  
+- Social: fair pay, safety, supply chain standards, data privacy, inclusion.  
+- Governance: board independence/skills, audits, remuneration alignment, risk controls.  
+- Why ESG ≠ “sustainable”: ESG is an **analysis lens**; sustainability labels require **objectives, criteria, and reporting**.
+
+**Buttons:** [⬅ Return to Education Pack](#contents)
+
+---
+
+## Deep‑Dive: SDR Labels {#id deep-dive-sdr}
+- **Focus:** invests mainly in assets aligned to sustainability themes or standards.  
+- **Improvers:** invests mainly in assets expected to **improve** sustainability over time; **stewardship** is central.  
+- **Impact:** invests mainly in solutions aiming for **positive, measurable** outcomes; uses a **theory of change** and **KPIs**.  
+- **Mixed Goals:** invests mainly in a mix of the above.  
+- **Timeline cues:** labels visible from **31 Jul 2024**; from **2 Apr 2025** unlabeled funds making claims must provide simple explanations and *why no label* statements.  
+- **Client updates:** label users provide **annual progress** updates against objectives.
+
+**Buttons:** [⬅ Return to Education Pack](#contents)
+
+---
+
+## Deep‑Dive: Anti‑Greenwashing {#id deep-dive-agw}
+- Claims must be **correct & substantiated** (evidence held and reviewed).  
+- **Clear** for the intended audience (explain terms; avoid vague language).  
+- **Complete** (no cherry‑picking; state conditions/limitations; consider lifecycle).  
+- **Fair & meaningful** comparisons (compare like‑with‑like; disclose scope/limits).  
+- **Visuals matter:** images/colours/logos must not over‑imply sustainability.  
+- **Good practice:** publish supporting evidence or frameworks; keep an audit trail.
+
+**Buttons:** [⬅ Return to Education Pack](#contents)
+
+---
+
+## Deep‑Dive: Investment Choices (KBS) {#id deep-dive-choices}
+- **Conventional / Conventional + ESG:** financial risk/return objective; ESG integration manages material risks/opportunities.  
+- **Improvers:** engagement priorities, escalation, and voting; examples of improvement KPIs (e.g., CO2e/intensity trends; safety incidents).  
+- **Focus:** thematic allocations (e.g., water/health/clean energy/circular economy); diversification considerations.  
+- **Impact:** theory of change, KPIs (e.g., affordable housing units, CO2e avoided), additionality and measurement challenges.  
+- **Mixed Goals:** blended approach with guardrails (min % per pillar, rebalancing rules).  
+- **Ethical:** values‑based screens (e.g., tobacco, controversial weapons, animal testing, human rights); universe effects.  
+- **Philanthropy:** optional complement (SDG‑linked giving strategies).
+
+**Buttons:** [⬅ Return to Education Pack](#contents)
+
+---
+
+## Deep‑Dive: How Managers Decide {#id deep-dive-managers}
+- **Objectives & policy** (label‑aligned; exclusions; impact intent).  
+- **Metrics & plain numbers** (e.g., “£67 of every £100” aligned to X theme; implied temperature; relative carbon footprint).  
+- **Context & evaluative cues** (benchmarks, ranges, thresholds).  
+- **Stewardship** (priority issues, escalation steps, voting records).  
+- **Evidence & balance** (publish constraints and negatives to avoid cherry‑picking).  
+- **Annual updates** (progress vs objectives/KPIs; what changed and why).
+
+**Buttons:** [⬅ Return to Education Pack](#contents)
+
+---
+
+## Deep‑Dive: Suitability (COBS 9A) {#id deep-dive-cobs}
+- Gather **knowledge & experience**, **financial situation** (incl. ability to bear loss), **objectives/risk tolerance**.  
+- No recommendation if sufficient information is not obtained.  
+- **Suitability report**: explains how the advice meets your preferences/objectives; periodic updates where relevant.  
+
+**Buttons:** [⬅ Return to Education Pack](#contents)
+
+---
+
+## Deep‑Dive: Product Governance (PROD 3) {#id deep-dive-prod}
+- **Manufacturers**: target market (granular), distribution strategy, product testing, regular reviews, conflicts management, oversight & competence.  
+- **Distributors**: understand products, own target market, best‑interests distribution, monitor sales (incl. outside target market), periodic reviews, oversight & competence.  
+
+**Buttons:** [⬅ Return to Education Pack](#contents)
+
+---
+
+## Deep‑Dive: Disclosures & Design {#id deep-dive-design}
+- Behaviourally‑informed factsheets **improve comprehension** vs. technical docs alone.  
+- Use **plain numbers** (pounds/frequencies), pre‑calculate where possible.  
+- Provide **context** and **evaluative cues**; indicate better/worse visually.  
+- Present the **single‑label description** for the product in hand (avoid overwhelming comparisons).  
+
+**Buttons:** [⬅ Return to Education Pack](#contents)
+
+---
+
+# INTENTS (Client-Facing)
+
+> Intents emit **actions** that drive the UI to show a basic section with a **Know more** button. When users press **Know more**, the bot calls `action:deep_dive` with the section id; the UI renders the corresponding **DEEP_DIVES** block and a **Return** button.
+
+intent: help_overview
 utterances:
   - "help"
   - "menu"
   - "what can you do"
   - "show topics"
 reply_short: >
-  I can explain ESG, UK SDR labels, anti‑greenwashing rules, your KBS Preference Pathway options,
-  and how advisers turn preferences into suitable advice. What would you like to explore?
-quick_replies: ["What is ESG?", "SDR labels", "Preference Pathway", "Anti‑greenwashing", "Suitability"]
+  I can walk you through ESG, UK SDR labels, anti‑greenwashing, your KBS Preference Pathway options,
+  and how advisers translate preferences into suitable advice. Pick a topic to start.
+actions:
+  - type: show_contents
 
-### intent: esg_basics
+intent: esg_basics
 utterances:
   - "what is esg"
   - "esg basics"
-  - "explain environmental social governance"
-reply_short: >
-  ESG is a lens to assess financially material environmental, social and governance factors in investments.
-  It doesn’t automatically mean “sustainable” or “impact” — it’s a process investors use to price risk and find opportunities.
-deep_link: "#what-is-esg"
-quick_replies: ["SDR labels", "Preference Pathway"]
+  - "environmental social governance"
+reply_short: "Here’s a quick overview of ESG."
+actions:
+  - type: show_section
+    id: esg_basics
+    deep_dive_id: deep-dive-esg
 
-### intent: sdr_labels
+intent: sdr_labels
 utterances:
   - "what are sdr labels"
   - "uk sustainable labels"
   - "focus vs improvers vs impact vs mixed"
-reply_short: >
-  The UK’s optional labels are **Focus**, **Improvers**, **Impact**, and **Mixed Goals**. Each sets a different sustainability objective.
-  Unlabelled funds making sustainability claims must still provide clear, simple info and say why there’s no label.
-deep_link: "#sdr-labels-uk-fca"
-quick_replies: ["Improvers vs Focus", "What is Impact?", "Mixed Goals"]
+reply_short: "Here are the four SDR labels and what they mean."
+actions:
+  - type: show_section
+    id: sdr_labels
+    deep_dive_id: deep-dive-sdr
 
-### intent: anti_greenwashing
+intent: anti_greenwashing
 utterances:
   - "anti greenwashing"
-  - "what counts as greenwashing"
+  - "greenwashing rules"
   - "fair clear not misleading"
-reply_short: >
-  Claims must be correct and evidence‑based, clear to the intended audience, complete (no cherry‑picking),
-  and fair/meaningful in comparisons. Visuals must not over‑imply sustainability.
-deep_link: "#anti-greenwashing-fg243"
-quick_replies: ["Examples", "Preference Pathway"]
+reply_short: "These are the headline anti‑greenwashing requirements."
+actions:
+  - type: show_section
+    id: anti_greenwashing
+    deep_dive_id: deep-dive-agw
 
-### intent: kbs_pathway_overview
+intent: kbs_pathway_overview
 utterances:
   - "preference pathway"
   - "investment choices"
   - "kbs options"
-reply_short: >
-  Choose from: Conventional, Conventional + ESG, Sustainability (**Improvers / Focus / Impact / Mixed Goals**),
-  Ethical, and optional Philanthropy. You can mix pathways or apply different ones per product.
-deep_link: "#kbs-investment-choices-preference-pathway"
-quick_replies: ["Improvers", "Focus", "Impact", "Mixed Goals", "Ethical"]
+reply_short: "Here are the KBS Preference Pathway choices."
+actions:
+  - type: show_section
+    id: kbs_choices
+    deep_dive_id: deep-dive-choices
 
-### intent: improvers_detail
-utterances:
-  - "what is improvers"
-  - "explain sustainability improvers"
-reply_short: >
-  Invests mainly in assets that may not be sustainable now but **aim to improve** over time, typically using stewardship and engagement.
-deep_link: "#sustainability-improvers"
-quick_replies: ["How managers decide", "Focus", "Impact"]
-
-### intent: focus_detail
-utterances:
-  - "what is focus"
-  - "sustainability focus label"
-reply_short: >
-  Invests mainly in assets that **focus on sustainability** (themes/standards). Narrower universes may affect diversification.
-deep_link: "#sustainability-focus"
-quick_replies: ["Improvers", "Impact", "Mixed Goals"]
-
-### intent: impact_detail
-utterances:
-  - "what is impact"
-  - "sustainability impact label"
-reply_short: >
-  Invests mainly in **solutions** to sustainability problems with an aim to achieve a **positive, measurable impact** using a theory of change and KPIs.
-deep_link: "#sustainability-impact"
-quick_replies: ["How managers decide", "Mixed Goals"]
-
-### intent: mixed_goals_detail
-utterances:
-  - "mixed goals label"
-  - "how does mixed goals work"
-reply_short: >
-  A blended allocation across Focus, Improvers and Impact approaches. Can be manager‑driven or tailored via your preferences.
-deep_link: "#sustainability-mixed-goals"
-quick_replies: ["Improvers", "Focus", "Impact"]
-
-### intent: ethical_investing
-utterances:
-  - "ethical investing"
-  - "values based investing"
-reply_short: >
-  Apply personal values via exclusions and/or positive screens (e.g., tobacco or human‑rights screens). A restricted universe can affect risk/return.
-deep_link: "#ethical-investment"
-quick_replies: ["Preference Pathway", "Suitability"]
-
-### intent: how_managers_decide
+intent: how_managers_decide
 utterances:
   - "how do managers decide it's sustainable"
   - "fund manager role"
-reply_short: >
-  Managers set objectives and policies; use clear metrics and plain numbers; practice stewardship (especially for Improvers);
-  keep evidence; and provide client‑friendly annual progress updates.
-deep_link: "#how-fund-managers-decide-sustainable-investments"
-quick_replies: ["Anti‑greenwashing", "SDR labels"]
+reply_short: "How managers set objectives, use metrics, and report progress."
+actions:
+  - type: show_section
+    id: managers_decide
+    deep_dive_id: deep-dive-managers
 
-### intent: suitability
+intent: suitability
 utterances:
   - "suitability rules"
-  - "what information do you need about me"
-reply_short: >
-  Advisers assess your knowledge/experience, financial situation (incl. ability to bear loss) and objectives/risk tolerance.
-  If sufficient info isn’t obtained, no personal recommendation can be made. You’ll receive a written suitability report.
-deep_link: "#suitability-cobs-9a"
-quick_replies: ["Preference Pathway", "Product governance"]
+  - "what information do you need"
+reply_short: "How advisers ensure recommendations are suitable."
+actions:
+  - type: show_section
+    id: cobs_9a
+    deep_dive_id: deep-dive-cobs
 
-### intent: product_governance
+intent: product_governance
 utterances:
   - "product governance"
   - "target market rules"
-reply_short: >
-  Manufacturers define target markets and share product info; distributors must understand products, set their own target market,
-  ensure distribution in clients’ best interests, and review arrangements regularly.
-deep_link: "#product-governance-prod-3"
-quick_replies: ["Suitability", "Preference Pathway"]
+reply_short: "Target market and distribution responsibilities."
+actions:
+  - type: show_section
+    id: prod_3
+    deep_dive_id: deep-dive-prod
 
-### intent: tradeoffs
+intent: design_for_understanding
 utterances:
-  - "are there trade offs"
-  - "risks of sustainable funds"
-reply_short: >
-  Thematic screens can narrow the investable universe and affect diversification and risk/return.
-  Outcomes depend on manager selection, portfolio construction, and your chosen preferences.
-deep_link: "#kbs-investment-choices-preference-pathway"
-quick_replies: ["How managers decide", "Suitability"]
+  - "disclosures"
+  - "factsheet design"
+reply_short: "What makes disclosures easier to understand."
+actions:
+  - type: show_section
+    id: design_understanding
+    deep_dive_id: deep-dive-design
+
+intent: deep_dive
+utterances:
+  - "know more"
+  - "tell me more"
+  - "more details"
+reply_short: "Here are more details."
+actions:
+  - type: deep_dive_current
+
+intent: return_to_pack
+utterances:
+  - "back"
+  - "return"
+  - "go back"
+reply_short: "Back to the Education Pack."
+actions:
+  - type: return_to_pack
 
 ---
 
-## Deep-Dive Educational Content (anchor-linked)
+# DEV_NOTES (visibility: internal)
+visibility: internal
 
-### What is ESG?
-ESG is a structured way to evaluate financially material factors:
-- **Environmental**: climate & carbon, resource use, pollution, biodiversity.
-- **Social**: workforce, supply chains, safety & well‑being, human rights.
-- **Governance**: board oversight, audit, pay, ethics, controls, cyber.
+## 1) Interaction Contract
 
-> ESG integration alone doesn’t make a fund “sustainable” or “impact”; it’s an analysis lens for risk and opportunity.
+### Actions (emit from NLU / policy)
+- `show_contents` → render the Contents list under **Education Pack (Basic)**.
+- `show_section` with `id` and `deep_dive_id` → render the Basic section text + a **Know more** button bound to `action:deep_dive` with `deep_dive_id`.
+- `deep_dive_current` → look up `state.current_section_id` → resolve `deep_dive_id` → render matching **DEEP_DIVES** block + a **Return** button bound to `action:return_to_pack`.
+- `return_to_pack` → pop `state.breadcrumb` / set `in_deep_dive=false` → render **Contents** or the parent **Basic section**.
 
-### SDR Labels (UK FCA)
-**Labels (optional, criteria‑based):**
-- **Sustainability Focus** — invest mainly in assets that **focus on sustainability**.
-- **Sustainability Improvers** — invest mainly in assets that **aim to improve** over time (often via stewardship).
-- **Sustainability Impact** — invest mainly in **solutions** with an aim to achieve a **positive, measurable impact**.
-- **Sustainability Mixed Goals** — invest mainly in a **mix** of Focus/Improvers/Impact assets.
+### State
+- Set `state.current_section_id` on `show_section`.
+- Push to `state.breadcrumb` on entering a deep dive; pop on return.
 
-**Client cues:** Labels visible from **31 Jul 2024**; from **2 Apr 2025**, unlabeled funds making sustainability claims must provide clear, simple explanations and a statement on *why no label*.
+### Buttons
+- Basic sections: one **Know more** button → `action:deep_dive_current` (or explicit deep_dive_id).
+- Deep‑dives: one **Return** button → `action:return_to_pack`.
 
-### Anti‑Greenwashing (FG24/3)
-Product/service claims must be:
-- **Correct & substantiated** (evidence held and reviewed).
-- **Clear & understandable** (avoid vague terms; explain technical terms).
-- **Complete** (no cherry‑picking; state conditions/limitations; consider lifecycle).
-- **Fair & meaningful** in comparisons (compare like‑with‑like; disclose scope/limits).  
-**Visuals matter**: images/logos/colours must not over‑imply sustainability.
+## 2) Visibility & Leakage Prevention
 
-### KBS Investment Choices (Preference Pathway)
-KBS framework for aligning client choices and records (may combine strategies and/or set different pathways per product):
-- **Conventional** — financial risk/return objective; no explicit sustainability objective.
-- **Conventional including ESG** — financial risk/return objective + ESG integration in research/risk management.
-- **Sustainability: Improvers** — aim to improve sustainability over time; stewardship/engagement central.
-- **Sustainability: Focus** — align to environmental/social themes or standards; narrower universes can affect diversification.
-- **Sustainability: Impact** — solutions‑oriented; measurable outcomes with theory of change and KPIs; annual progress updates.
-- **Sustainability: Mixed Goals** — blended allocation across Focus/Improvers/Impact.
-- **Ethical Investment** — values‑based screens; universe restrictions vary by criteria.
-- **Philanthropy** — optional complement (giving linked to priority causes/SDGs).
+- Enforce `render_policy.hide_internal_sections=true`.
+- Everything under **DEV_NOTES** must never be returned to the client.
+- Strip YAML front‑matter keys that are not relevant to user rendering before sending responses.
 
-### How Fund Managers Decide “Sustainable” Investments
-Common practices:
-- **Objectives & policy** (label‑aligned goals; explain exclusions, stewardship).
-- **Metrics & plain numbers** (e.g., “£67 of every £100”, implied temperature rise, relative carbon footprint), with **context** and **evaluative cues**.
-- **Stewardship** (engagement priorities, escalation, voting), especially for **Improvers**.
-- **Evidence & balance** (keep audit trails; disclose limitations and negatives).
-- **Annual updates** (label users provide client‑friendly progress against KPIs).
+## 3) Error / Fallback
 
-### Suitability (COBS 9A)
-Advisers gather: **knowledge/experience**, **financial situation/ability to bear loss**, **objectives/risk tolerance**.  
-- No personal recommendation if sufficient info isn’t obtained.
-- Suitability reports explain how advice fits preferences/objectives; periodic statements where relevant.
+- If a deep‑dive id is missing, fall back to **Contents** with a soft apology and a link to **Help**.
+- Unknown utterance → route to `help_overview`.
+- Always append the **disclaimers_client** footer on the first two turns in a new session.
 
-### Product Governance (PROD 3)
-- **Manufacturers**: define target market (granular), align distribution strategy, share product info, review products regularly, manage conflicts, ensure competence & oversight.
-- **Distributors**: understand products, set own target market, ensure distribution is in clients’ best interests, monitor sales (incl. outside target market), review arrangements; management oversight and competence apply.
+## 4) Compliance Guardrails
 
-### Disclosures & Design for Understanding
-FCA evidence shows behaviourally‑informed factsheets improve comprehension vs KIIDs alone:
-- Provide **single‑label** description for the product in hand.
-- Use **plain numbers** (pounds/frequencies), pre‑calculate, avoid excess jargon.
-- Add **context** and **evaluative cues** for key metrics; indicate better/worse visually.
-- Time the disclosure to points of decision; encourage engagement.
+- When the bot displays SDR labels or anti‑greenwashing rules, ensure text aligns with FCA materials: labels **Focus/Improvers/Impact/Mixed Goals**; unlabeled claimants must provide simple info & *why no label*; claims must be **correct, clear, complete, fair**; visuals must not over‑imply. (Sources: FCA consumer page; FG24/3).  
+- Suitability (COBS 9A): gather knowledge/experience, financial situation (incl. ability to bear loss), objectives/risk tolerance; no recommendation if insufficient info; provide suitability report and periodic updates where relevant.  
+- Product Governance (PROD 3): manufacturers define target market; distributors ensure best‑interests distribution and periodic reviews.
 
-### Glossary
-- **ESG integration** — considering environmental, social and governance factors in investment analysis/risk management.
-- **Stewardship** — engagement and voting to influence investee companies.
-- **Theory of change** — how a strategy expects to create measurable outcomes.
-- **Implied temperature rise** — a portfolio‑level warming pathway metric.
-- **Relative carbon footprint** — carbon per unit invested vs benchmark.
+## 5) Analytics
 
----
+- Track: section views, deep‑dive opens, returns, drop‑offs.  
+- Log: pathway interest distribution to inform advice journeys (no personal data stored).
 
-## Appendix: PDF Builder Sections (source text)
+## 6) Task Breakdown
 
-> Use this section as the source to compile/refresh the client/compliance PDF.
+- **Conversation Design**
+  - Validate intents & utterances; expand with client verbatims.
+  - Map each intent → `show_section` / `deep_dive_current` / `return_to_pack`.
+  - Acceptance: each section reachable in ≤ 2 clicks; return behaves consistently.
 
-- **Front matter**: ESG & SDR Educational Pack — Detailed Guide (v2.0, KBS Preference Pathway Edition); last updated 2025-10-29.
-- **1. What ESG is — and is not**: ESG factors; ESG ≠ automatically sustainable/impact.
-- **2. UK SDR labels (client‑friendly overview)**: Focus, Improvers, Impact, Mixed Goals; timeline cues; unlabeled claimants must provide simple info + “why no label” statement.
-- **3. Anti‑Greenwashing (FG24/3)**: Correct; Clear; Complete; Fair/meaningful comparisons; visuals must be consistent.
-- **4. Investment choices (KBS Preference Pathway)**: Conventional; Conventional+ESG; Improvers; Focus; Impact; Mixed Goals; Ethical; Philanthropy — with notes on trade‑offs and stewardship.
-- **5. How fund managers decide**: objectives/policy; plain numbers & metrics; stewardship; evidence & balance; annual updates.
-- **6. Suitability (COBS 9A)**: info to obtain; no rec if insufficient info; suitability reports; periodic review statements.
-- **7. Product governance (PROD 3)**: manufacturer vs distributor duties; target market; oversight; competence; review.
-- **8. Designing disclosures**: one‑page summaries; plain numbers; context; evaluative cues; avoid overwhelming comparisons.
-- **9. Key client notices**: risk warnings; screens and diversification; evolving data/methods; educational‑only disclaimer.
+- **NLU / Policy**
+  - Add training utterances from this file; threshold at 0.6; enable fuzzy matching.
+  - Acceptance: confusion ≤ 10% in smoke tests; “know more” routes correctly from any section.
 
----
+- **Frontend**
+  - Render **Contents** as a list of links + inline buttons.
+  - Basic section → text + **Know more** button.
+  - Deep‑dive → text + **Return** button.
+  - Acceptance: keyboard accessibility; buttons announced by screen readers.
 
-## KBS Records & Templates (mapping)
+- **Backend**
+  - Implement state keys; hydrate from session token.
+  - Implement actions as per Interaction Contract.
+  - Acceptance: telemetry events fire; state resets on session end.
 
-- **Informed Choice: Preference Pathway (client guide)** → maps to [KBS Investment Choices](#kbs-investment-choices-preference-pathway)
-- **Preference Pathway Record (client & adviser)** → capture chosen pathway(s), % allocations, notes, and signatures.
-- **Anti-Greenwashing Checklist (compliance)** → verify claims are **correct, clear, complete, fair**; check visuals and comparisons.
+- **Compliance QA**
+  - Cross‑check SDR/AGW text with FCA refs.
+  - Confirm suitability & PROD summaries align with handbook extracts.
+  - Validate anti‑greenwashing checklist is referenced in adviser tooling.
 
----
-
-## Disclaimers & Compliance Guardrails
-
-- **Educational only; not advice.** Ask your adviser for personalised recommendations.
-- **Anti-greenwashing**: ensure product/service claims are **correct, clear, complete, and fair**; visuals must not over-imply sustainability.
-- **Trade-offs**: thematic or exclusionary strategies can impact diversification and risk/return.
-- **Suitability & target market**: apply COBS 9A and PROD 3 duties when turning preferences into advice.
-- **Updates**: sustainability data and methodologies evolve; labels/disclosures may change over time.
-
----
-
-## Sources (for internal reference)
-
-- UK FCA: **Sustainable investment labels & anti-greenwashing** (labels, timelines, consumer disclosures).  
-- UK FCA: **FG24/3 Anti-Greenwashing Guidance** (correct/clear/complete/fair + visuals).  
-- UK FCA: **Occasional Paper 62** (factsheet design; plain numbers; single-label display; improved comprehension).  
-- FCA Handbook: **COBS 9A** (suitability duties; suitability reports; periodic statements).  
-- FCA Handbook: **PROD 3** (product governance; target market; distribution oversight).  
-- **KBS Preference Pathway** documents (client education & record templates).
+## 7) Source Anchors (for dev/legal only; do not render to clients)
+- FCA consumer page — sustainable investment labels & anti‑greenwashing (labels, timelines, disclosures). 【26†source】
+- FCA FG24/3 — anti‑greenwashing guidance (correct, clear, complete, fair; visuals). 【27†source】
+- FCA COBS 9A — suitability duties & reports. 【29†source】
+- FCA PROD 3 — product governance & distribution. 【30†source】【31†source】
+- KBS Preference Pathway materials — client education & records. 【34†source】【32†source】【33†source】

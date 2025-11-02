@@ -131,18 +131,20 @@ The system guides clients through 8 structured segments:
 7. **Report**: Suitability report generation
 8. **Delivery**: Report delivery and completion
 
-### ESG & SDR Educational Pack (v2.0)
+### Education Pack (Basic) + Deep-Dives (v2.1)
 
-- The canonical specification lives in [`educational_pack.md`](educational_pack.md) and
+- The canonical runtime specification lives in [`educational_pack.md`](educational_pack.md) and
   is referenced by the conversation engine, PDF generator, and Render-facing
-  documentation. Version 2.0 (dated 2025-10-29) includes refreshed intents,
-  micro-modules, deep dives, appendix text, and compliance guardrails that align
-  with the latest KBS Preference Pathway guidance.
-- The client and adviser portals now render the same pack dynamically. The UI
-  populates the education modal from [`public/educationPackContent.js`](public/educationPackContent.js),
-  ensuring the on-screen content matches the conversational detours and PDF output.
+  documentation. Version 2.1 (dated 2025-11-01) streamlines the client-facing
+  content to basic sections and deep dives while enforcing the new render policy
+  to hide internal developer notes.
+- The client, adviser, and admin portals render the same pack dynamically from
+  [`public/educationPackContent.js`](public/educationPackContent.js), ensuring the
+  UI matches conversational detours and the PDF output without leaking internal
+  implementation guidance.
 - When updating the pack, edit both the Markdown source and the front-end module
-  so clients, advisers, and generated reports stay in sync.
+  (plus regenerate PDF assets if needed) so clients, advisers, and generated
+  reports stay in sync.
 
 ## API Endpoints
 

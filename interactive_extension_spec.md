@@ -21,7 +21,7 @@ This spec extends the structured conversation to support a personable, adaptive,
 ---
 
 ## 3. Educational Layer (On-Demand Modules)
-Backed by `EDUCATION_PACK_METADATA` (id `esg_sdr_pack_v2`, version 2.0).
+Backed by `EDUCATION_PACK_METADATA` (id `esg_sdr_pack_v2_runtime`, version 2.1).
 
 Core modules (micro-modules first, then deep dives on demand):
 - ESG basics (Environmental, Social, Governance lens).
@@ -37,7 +37,7 @@ Core modules (micro-modules first, then deep dives on demand):
 Format requirements:
 - Deliver a concise summary in chat sourced from `EDUCATION_MODULES`.
 - Run module-specific comprehension checks and log via `recordComprehensionResponse()`.
-- Offer the comprehensive PDF (v2.0) after each summary: “Would you like the full ESG & SDR educational pack?”
+- Offer the comprehensive PDF (v2.1) after each summary: “Would you like the full education pack (basic + deep dives)?”
 - Record module slug, interaction type, and PDF status for audit and MI.
 
 ---
