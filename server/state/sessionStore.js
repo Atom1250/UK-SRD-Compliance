@@ -17,16 +17,28 @@ import logger from "../monitoring/logger.js";
 
 // Import session monitor for real-time notifications
 let sessionMonitor = null;
-try {
-  const { sessionMonitor: monitor } = await import("../websocket/sessionMonitor.js");
-  sessionMonitor = monitor;
-} catch (error) {
-  // WebSocket monitor not available, continue without real-time features
-  console.log('WebSocket session monitor not available');
-}
+import("../websocket/sessionMonitor.js")
+  .then(({ sessionMonitor: monitor }) => {
+    sessionMonitor = monitor;
+  })
+  .catch((error) => {
+    // WebSocket monitor not available, continue without real-time features
+    if (error?.code === 'ERR_MODULE_NOT_FOUND' || error?.code === 'MODULE_NOT_FOUND') {
+      console.log('WebSocket session monitor not available');
+    } else {
+      console.error('Failed to load WebSocket session monitor', error);
+    }
+  });
 
 const createEmptySessionData = (sessionId) => ({
   session_id: sessionId,
+  advisor_assignment: {
+    advisor_id: null,
+    advisor_name: "",
+    advisor_username: "",
+    assigned_at: null,
+    assigned_by: null
+  },
   client_profile: {
     client_type: "",
     objectives: "",
@@ -111,7 +123,8 @@ const createEmptySessionData = (sessionId) => ({
     explanation_shown: false,
     educ_pack_sent: false,
     guardrail_triggers: [],
-    report_hash: null
+    report_hash: null,
+    advisor_assignment_history: []
   },
   educational_requests: [],
   extra_questions: [],
@@ -119,12 +132,21 @@ const createEmptySessionData = (sessionId) => ({
   additional_notes: ""
 });
 
-export const createSession = ({ ip } = {}) => {
+export const createSession = ({
+  ip,
+  ownerId = null,
+  ownerRole = null,
+  advisorId = null
+} = {}) => {
   const id = randomUUID();
   const timestamp = new Date().toISOString();
 
   const session = {
     id,
+    ownerId,
+    ownerRole,
+    assignedAdvisorId: advisorId,
+    assignedAdvisorAssignedAt: advisorId ? timestamp : null,
     stage: CONVERSATION_STAGES[0],
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -152,6 +174,21 @@ export const createSession = ({ ip } = {}) => {
 
   if (ip) {
     session.data.audit.ip = ip;
+  }
+
+  if (advisorId) {
+    session.data.advisor_assignment = {
+      ...session.data.advisor_assignment,
+      advisor_id: advisorId,
+      assigned_at: timestamp,
+      assigned_by: ownerId
+    };
+
+    session.data.audit.advisor_assignment_history.push({
+      advisor_id: advisorId,
+      assigned_at: timestamp,
+      assigned_by: ownerId
+    });
   }
 
   persistSession(session);

@@ -1,3 +1,5 @@
+import { renderEducationPack } from "./educationPackContent.js";
+
 const messagesList = document.getElementById("messages");
 const promptText = document.getElementById("current-prompt");
 const stageLabel = document.getElementById("stage");
@@ -14,10 +16,32 @@ const reportDownload = document.getElementById("report-download");
 const stageFormContainer = document.getElementById("stage-form");
 const educationPackToggle = document.getElementById("view-education-pack");
 const educationPackSection = document.getElementById("education-pack");
+const educationPackContent = educationPackSection?.querySelector(".education-pack__content");
 const educationPackClose = document.getElementById("close-education-pack");
 const educationPackReturn = document.getElementById("return-to-questionnaire");
+const userDisplay = document.getElementById("user-display");
+const logoutButton = document.getElementById("logout-button");
+const statusSection = document.querySelector(".status");
+const summarySection = document.querySelector(".summary");
+const advisorSelectionSection = document.getElementById("advisor-selection");
+const advisorForm = document.getElementById("advisor-form");
+const advisorSelect = document.getElementById("advisor-select");
+const advisorError = document.getElementById("advisor-error");
+
+if (educationPackContent) {
+  const alreadyLoaded = educationPackContent.dataset.loaded === "true";
+  const hasPlaceholder = Boolean(
+    educationPackContent.querySelector(".education-pack__loading")
+  );
+
+  if (!alreadyLoaded || hasPlaceholder) {
+    renderEducationPack(educationPackContent);
+    educationPackContent.dataset.loaded = "true";
+  }
+}
 
 const bodyElement = document.body;
+const REQUIRED_ROLE = bodyElement?.dataset?.role ?? null;
 
 const CLIENT_TYPES = ["individual", "joint", "trust", "company"];
 const RISK_SCALE = [1, 2, 3, 4, 5, 6, 7];
@@ -111,10 +135,13 @@ const setComposerDisabled = (disabled) => {
   }
 };
 
+setComposerDisabled(true);
+
 const api = async (path, options = {}) => {
   const response = await fetch(`/api${path}`, {
     method: "GET",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined
   });
@@ -128,10 +155,167 @@ const api = async (path, options = {}) => {
   return response.json();
 };
 
+const redirectForRole = (role) => {
+  switch (role) {
+    case "admin":
+      window.location.href = "/admin.html";
+      break;
+    case "advisor":
+      window.location.href = "/advisor.html";
+      break;
+    case "client":
+    default:
+      window.location.href = "/client.html";
+      break;
+  }
+};
+
+const updateUserDisplay = (user) => {
+  if (!userDisplay) return;
+  const label = user?.name || user?.username || "";
+  const role = user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : "";
+  userDisplay.textContent = label ? `${label} · ${role}` : role;
+};
+
+const hideClientSections = () => {
+  if (REQUIRED_ROLE !== "client") {
+    return;
+  }
+
+  statusSection?.setAttribute("hidden", "");
+  summarySection?.setAttribute("hidden", "");
+};
+
+const ensureAuthenticated = async () => {
+  try {
+    const response = await fetch("/api/auth/session", { credentials: "include" });
+    if (!response.ok) {
+      throw new Error("AUTH_REQUIRED");
+    }
+
+    const { user } = await response.json();
+    if (!user?.role) {
+      throw new Error("NO_ROLE");
+    }
+
+    if (REQUIRED_ROLE && user.role !== REQUIRED_ROLE && user.role !== "admin") {
+      redirectForRole(user.role);
+      return null;
+    }
+
+    activeUser = user;
+    updateUserDisplay(user);
+    hideClientSections();
+    return user;
+  } catch (error) {
+    throw error;
+  }
+};
+
+logoutButton?.addEventListener("click", async () => {
+  try {
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "include"
+    });
+  } finally {
+    window.location.href = "/index.html";
+  }
+});
+
+const setAdvisorError = (message) => {
+  if (!advisorError) return;
+  if (!message) {
+    advisorError.textContent = "";
+    advisorError.hidden = true;
+    return;
+  }
+
+  advisorError.textContent = message;
+  advisorError.hidden = false;
+};
+
+let advisorSelectionInitialized = false;
+let advisorOptionsLoaded = false;
+
+const loadAdvisorOptions = async () => {
+  if (!advisorSelect) return;
+
+  advisorSelect.disabled = true;
+  setAdvisorError("");
+
+  try {
+    const { advisors } = await api("/advisors");
+    advisorSelect.innerHTML = '<option value="">Select an adviser</option>';
+
+    (advisors || []).forEach((advisor) => {
+      const option = document.createElement("option");
+      option.value = advisor.id;
+      option.textContent = advisor.name || advisor.username || "Adviser";
+      advisorSelect.appendChild(option);
+    });
+
+    advisorOptionsLoaded = true;
+  } catch (error) {
+    setAdvisorError(error.message);
+  } finally {
+    advisorSelect.disabled = false;
+  }
+};
+
+const initializeAdvisorSelection = () => {
+  if (advisorSelectionInitialized) {
+    return;
+  }
+
+  advisorSelectionInitialized = true;
+
+  if (!advisorSelectionSection || !advisorForm || !advisorSelect) {
+    bootstrap();
+    return;
+  }
+
+  advisorSelectionSection.hidden = false;
+  setComposerDisabled(true);
+
+  if (!advisorOptionsLoaded) {
+    loadAdvisorOptions();
+  }
+
+  advisorForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    setAdvisorError("");
+
+    const advisorId = advisorSelect.value;
+    if (!advisorId) {
+      setAdvisorError("Please select an adviser before continuing.");
+      return;
+    }
+
+    const submitButton = advisorForm.querySelector("button[type='submit']");
+    if (submitButton) {
+      submitButton.disabled = true;
+    }
+
+    try {
+      await bootstrap({ advisor_id: advisorId });
+      advisorSelectionSection.hidden = true;
+      setAdvisorError("");
+    } catch (error) {
+      setAdvisorError(error.message);
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+      }
+    }
+  });
+};
+
 let currentSessionId = null;
 let currentSession = null;
 let educationPackAutoOpened = false;
 let multiModalInterface = null;
+let activeUser = null;
 
 const openEducationPack = () => {
   if (!educationPackSection) return;
@@ -1023,21 +1207,30 @@ const sessionManager = {
   }
 };
 
-const bootstrap = async () => {
+const bootstrap = async (options = {}) => {
   try {
-    const data = await api("/sessions", { method: "POST" });
+    setComposerDisabled(true);
+    const data = await api("/sessions", { method: "POST", body: options });
     currentSessionId = data.session.id;
     setSessionId(currentSessionId);
     setSessionData(data.session);
-    data.messages.forEach((message) => addMessage("assistant", message));
-    
+    (data.messages ?? []).forEach((message) => addMessage("assistant", message));
+
+    if (advisorSelectionSection) {
+      advisorSelectionSection.hidden = true;
+    }
+
     // Initialize multi-modal interface
-    if (window.MultiModalInterface) {
+    if (window.MultiModalInterface && !multiModalInterface) {
       multiModalInterface = new window.MultiModalInterface(sessionManager);
     }
+
+    setComposerDisabled(false);
+    return data.session;
   } catch (error) {
     showError(error.message);
-    sendButton.disabled = true;
+    setComposerDisabled(true);
+    throw error;
   }
 };
 
@@ -1125,4 +1318,19 @@ askButton?.addEventListener("click", (event) => {
   submitFreeFormMessage();
 });
 
-bootstrap();
+ensureAuthenticated()
+  .then((user) => {
+    if (!user) {
+      return;
+    }
+
+    if (user.role === "client") {
+      initializeAdvisorSelection();
+      return;
+    }
+
+    return bootstrap();
+  })
+  .catch(() => {
+    window.location.href = "/index.html";
+  });
