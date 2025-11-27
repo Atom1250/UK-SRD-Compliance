@@ -1,4 +1,5 @@
 # UK-SRD-Compliance
+# Version 2
 
 This repository now contains a dependency-free Node.js prototype of the SDR Preference
 Pathway chatbot. The goal is to make the workflow runnable on constrained
